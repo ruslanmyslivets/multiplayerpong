@@ -271,9 +271,12 @@
 
         // ИИ или соперник
         if (!isMultiplayer()) {
-          const aiCy = opponent.y + PH/2;
-          if (ball.y < aiCy - 5) opponent.y -= 4.5;
-          else if (ball.y > aiCy + 5) opponent.y += 4.5;
+          // в одиночном режиме ИИ активен только при обнаруженной руке
+          if (hand) {
+            const aiCy = opponent.y + PH/2;
+            if (ball.y < aiCy - 5) opponent.y -= 4.5;
+            else if (ball.y > aiCy + 5) opponent.y += 4.5;
+          }
         } else {
           opponent.y = remoteY;
         }
@@ -284,39 +287,44 @@
           try { dc.send(JSON.stringify({ type: 'paddle', y: player.y })); } catch(e) {}
         }
 
-        // Физика мяча (всегда)
+        // Физика мяча
         if (!isMultiplayer() || isHost) {
-          ball.x += ball.vx;
-          ball.y += ball.vy;
+          // в одиночном режиме движение мяча только при обнаруженной руке
+          if (!isMultiplayer() && !hand) {
+            // пауза – ничего не делаем
+          } else {
+            ball.x += ball.vx;
+            ball.y += ball.vy;
 
-          if (ball.y - ball.r <= 0 || ball.y + ball.r >= ch) {
-            ball.vy *= -1;
-            ball.y = Math.max(ball.r, Math.min(ch - ball.r, ball.y));
-          }
+            if (ball.y - ball.r <= 0 || ball.y + ball.r >= ch) {
+              ball.vy *= -1;
+              ball.y = Math.max(ball.r, Math.min(ch - ball.r, ball.y));
+            }
 
-          if (ball.vx < 0 && ball.x - ball.r <= player.x + PW &&
-              ball.x - ball.r >= player.x &&
-              ball.y >= player.y && ball.y <= player.y + PH) {
-            const hit = (ball.y - player.y) / PH;
-            const ang = (hit - 0.5) * (Math.PI/3);
-            ball.vx = ball.speed * Math.cos(ang);
-            ball.vy = ball.speed * Math.sin(ang);
-            if (ball.vx < 0) ball.vx *= -1;
-            ball.speed = Math.min(ball.speed + 0.2, 12);
-          }
-          if (ball.vx > 0 && ball.x + ball.r >= opponent.x &&
-              ball.x + ball.r <= opponent.x + PW &&
-              ball.y >= opponent.y && ball.y <= opponent.y + PH) {
-            const hit = (ball.y - opponent.y) / PH;
-            const ang = (hit - 0.5) * (Math.PI/3);
-            ball.vx = -ball.speed * Math.cos(ang);
-            ball.vy = ball.speed * Math.sin(ang);
-            if (ball.vx > 0) ball.vx *= -1;
-            ball.speed = Math.min(ball.speed + 0.2, 12);
-          }
+            if (ball.vx < 0 && ball.x - ball.r <= player.x + PW &&
+                ball.x - ball.r >= player.x &&
+                ball.y >= player.y && ball.y <= player.y + PH) {
+              const hit = (ball.y - player.y) / PH;
+              const ang = (hit - 0.5) * (Math.PI/3);
+              ball.vx = ball.speed * Math.cos(ang);
+              ball.vy = ball.speed * Math.sin(ang);
+              if (ball.vx < 0) ball.vx *= -1;
+              ball.speed = Math.min(ball.speed + 0.2, 12);
+            }
+            if (ball.vx > 0 && ball.x + ball.r >= opponent.x &&
+                ball.x + ball.r <= opponent.x + PW &&
+                ball.y >= opponent.y && ball.y <= opponent.y + PH) {
+              const hit = (ball.y - opponent.y) / PH;
+              const ang = (hit - 0.5) * (Math.PI/3);
+              ball.vx = -ball.speed * Math.cos(ang);
+              ball.vy = ball.speed * Math.sin(ang);
+              if (ball.vx > 0) ball.vx *= -1;
+              ball.speed = Math.min(ball.speed + 0.2, 12);
+            }
 
-          if (ball.x + ball.r < 0) { scoreO++; updateScore(); resetBall(); }
-          else if (ball.x - ball.r > cw) { scoreP++; updateScore(); resetBall(); }
+            if (ball.x + ball.r < 0) { scoreO++; updateScore(); resetBall(); }
+            else if (ball.x - ball.r > cw) { scoreP++; updateScore(); resetBall(); }
+          }
 
           if (isMultiplayer() && isHost) {
             try {
@@ -327,6 +335,8 @@
               }));
             } catch(e) {}
           }
+        } else {
+          // Гость: данные приходят от хоста
         }
 
         ctx.clearRect(0, 0, cw, ch);
@@ -341,7 +351,7 @@
         requestAnimationFrame(loop);
       }
 
-      // ---------- Handpose (надёжное распознавание пальцев) ----------
+      // ---------- Handpose (без SIMD, работает всегда) ----------
       async function initHandpose() {
         const model = await handpose.load();
         console.log('Handpose model loaded');
@@ -357,7 +367,6 @@
                   const midY = (thumb[1] + index[1]) / 2;
                   handY = midY / videoEl.videoHeight;
                   hand = true;
-                  console.log('hand Y:', handY.toFixed(2));
                 } else {
                   hand = false;
                 }
@@ -376,7 +385,7 @@
         videoEl.srcObject = localStream;
         videoEl.muted = true;
         updateMic();
-        initHandpose(); // запускаем распознавание рук
+        initHandpose();
       }
 
       function updateMic() {
