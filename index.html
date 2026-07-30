@@ -1,0 +1,564 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+  <title>Pong Multiplayer с управлением пальцами</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { 
+      background: #000; display: flex; height: 100vh; overflow: hidden; position: relative;
+      font-family: monospace;
+    }
+
+    #divider {
+      position: absolute; left: 50vw; top: 0;
+      width: 0; height: 100vh;
+      border-left: 2px dashed white; z-index: 10; pointer-events: none;
+    }
+
+    #score-center {
+      position: absolute; top: 20px; left: 50%; transform: translateX(-50%);
+      color: white; font-size: 32px; font-weight: bold;
+      background: rgba(0,0,0,0.7); padding: 4px 30px; border-radius: 8px;
+      z-index: 20; letter-spacing: 4px;
+    }
+
+    #camera-panel {
+      width: 50vw; height: 100vh; position: relative;
+      display: flex; align-items: center; justify-content: center;
+      background: #111; z-index: 1;
+    }
+    #input-video {
+      width: 100%; height: 100%; object-fit: cover;
+      transform: scaleX(-1);
+    }
+
+    #game-panel {
+      width: 50vw; height: 100vh; position: relative;
+      background: black; z-index: 1;
+    }
+    #remote-video {
+      width: 100%; height: 100%; object-fit: cover;
+      position: absolute; top: 0; left: 0;
+    }
+    #game-canvas {
+      position: absolute; top: 0; left: 0;
+      width: 100%; height: 100%;
+      pointer-events: none;
+    }
+
+    #ui {
+      position: absolute; bottom: 20px; left: 20px;
+      color: white; font-size: 14px;
+      background: rgba(0,0,0,0.8); padding: 8px 15px;
+      border-radius: 8px; z-index: 25;
+      display: flex; flex-wrap: wrap; align-items: center; gap: 10px;
+    }
+    #copy-link-btn { background: #444; color: white; border: 1px solid white; padding: 4px 10px; border-radius: 4px; cursor: pointer; font-size: 12px; }
+    #status-text { color: #0f0; margin-left: 5px; }
+    #join-form { display: flex; gap: 5px; align-items: center; }
+    #room-input { padding: 3px 6px; font-size: 13px; width: 120px; border-radius: 4px; border: 1px solid #888; background: #333; color: white; }
+    #join-btn { background: #444; color: white; border: 1px solid white; padding: 4px 10px; border-radius: 4px; cursor: pointer; font-size: 12px; }
+    #mic-status { margin-left: 10px; color: #ff0; cursor: pointer; }
+
+    #lang-switch {
+      position: absolute; top: 20px; right: 20px;
+      background: rgba(0,0,0,0.7); color: white;
+      border: 1px solid white; border-radius: 4px;
+      padding: 4px 8px; font-size: 16px; cursor: pointer;
+      z-index: 30;
+    }
+  </style>
+</head>
+<body>
+  <div id="divider"></div>
+  <div id="score-center">0 : 0</div>
+
+  <div id="camera-panel">
+    <video id="input-video" autoplay playsinline muted></video>
+  </div>
+
+  <div id="game-panel">
+    <video id="remote-video" autoplay playsinline></video>
+    <canvas id="game-canvas"></canvas>
+    <div id="ui">
+      <span id="room-id-display" data-i18n="room_prefix">Комната: ...</span>
+      <button id="copy-link-btn" data-i18n="copy_link">Копировать ссылку</button>
+      <span id="status-text"></span>
+      <span id="mic-status" title="Микрофон">🔇</span>
+      <div id="join-form" style="display: none;">
+        <input id="room-input" type="text" data-i18n-placeholder="room_placeholder" placeholder="ID комнаты">
+        <button id="join-btn" data-i18n="connect">Подключиться</button>
+      </div>
+    </div>
+    <button id="lang-switch">🌐</button>
+  </div>
+
+  <!-- MediaPipe Hands -->
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/control_utils/control_utils.js" crossorigin="anonymous"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js" crossorigin="anonymous"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
+
+  <!-- PeerJS -->
+  <script src="https://unpkg.com/peerjs@1.5.1/dist/peerjs.min.js"></script>
+
+  <script>
+    (function() {
+      // ---------- Переводы ----------
+      const translations = {
+        ru: {
+          room_prefix: 'Комната:',
+          copy_link: 'Копировать ссылку',
+          connect: 'Подключиться',
+          room_placeholder: 'ID комнаты',
+          waiting: 'Ожидание соперника...',
+          connecting: 'Подключение...',
+          opponent_connected: 'Соперник подключился!',
+          opponent_disconnected: 'Соперник отключился',
+          link_copied: 'Ссылка скопирована!',
+          connection_error: 'Ошибка соединения',
+          alert_camera: 'Не удалось запустить камеру/микрофон. Проверьте разрешения и HTTPS.',
+          mic_title: 'Микрофон'
+        },
+        en: {
+          room_prefix: 'Room:',
+          copy_link: 'Copy link',
+          connect: 'Connect',
+          room_placeholder: 'Room ID',
+          waiting: 'Waiting for opponent...',
+          connecting: 'Connecting...',
+          opponent_connected: 'Opponent connected!',
+          opponent_disconnected: 'Opponent disconnected',
+          link_copied: 'Link copied!',
+          connection_error: 'Connection error',
+          alert_camera: 'Could not access camera/microphone. Check permissions and HTTPS.',
+          mic_title: 'Microphone'
+        }
+      };
+
+      let currentLang = 'ru';
+
+      // Определение языка системы при загрузке
+      function detectLanguage() {
+        const saved = localStorage.getItem('pong-lang');
+        if (saved === 'ru' || saved === 'en') return saved;
+        return navigator.language.startsWith('ru') ? 'ru' : 'en';
+      }
+
+      function setLanguage(lang) {
+        currentLang = lang;
+        localStorage.setItem('pong-lang', lang);
+        applyTranslations();
+        updateLangSwitchButton();
+      }
+
+      function t(key) {
+        return translations[currentLang][key] || key;
+      }
+
+      function applyTranslations() {
+        // Элементы с data-i18n (текст)
+        document.querySelectorAll('[data-i18n]').forEach(el => {
+          const key = el.getAttribute('data-i18n');
+          el.textContent = t(key);
+        });
+        // Плейсхолдеры
+        document.querySelectorAll('[data-i18n-placeholder]').forEach(el => {
+          const key = el.getAttribute('data-i18n-placeholder');
+          el.placeholder = t(key);
+        });
+        // title для микрофона
+        const mic = document.getElementById('mic-status');
+        if (mic) mic.title = t('mic_title');
+        // Обновим статус, если он установлен (у нас динамический, поэтому нужно заново вызвать setStatus с последним ключом)
+        // Мы сохраним последний ключ статуса и вызовем setStatus при смене языка
+        if (window._lastStatusKey) {
+          setStatus(window._lastStatusKey);
+        }
+      }
+
+      function setStatus(key) {
+        window._lastStatusKey = key;
+        const statusEl = document.getElementById('status-text');
+        if (statusEl) {
+          statusEl.textContent = t(key);
+        }
+      }
+
+      function updateLangSwitchButton() {
+        const btn = document.getElementById('lang-switch');
+        if (!btn) return;
+        btn.textContent = currentLang === 'ru' ? '🇷🇺' : '🇬🇧';
+      }
+
+      // Переключение языка по клику
+      document.getElementById('lang-switch').addEventListener('click', () => {
+        setLanguage(currentLang === 'ru' ? 'en' : 'ru');
+      });
+
+      // ---------- DOM ----------
+      const inputVideo = document.getElementById('input-video');
+      const canvas = document.getElementById('game-canvas');
+      const ctx = canvas.getContext('2d');
+      const remoteVideo = document.getElementById('remote-video');
+      const scoreCenter = document.getElementById('score-center');
+      const roomIdDisplay = document.getElementById('room-id-display');
+      const copyLinkBtn = document.getElementById('copy-link-btn');
+      const statusText = document.getElementById('status-text');
+      const micStatus = document.getElementById('mic-status');
+      const joinForm = document.getElementById('join-form');
+      const roomInput = document.getElementById('room-input');
+      const joinBtn = document.getElementById('join-btn');
+
+      // ---------- Игра ----------
+      let canvasWidth, canvasHeight;
+      const paddleWidth = 12, paddleHeight = 80;
+      const playerPaddle = { x: 20, y: 0 };
+      const aiPaddle = { x: 0, y: 0 };
+      const ball = { x: 0, y: 0, radius: 8, vx: 0, vy: 0, speed: 5 };
+      let scorePlayer = 0, scoreAI = 0;
+      let targetHandY = 0.5;
+      let handDetected = false;
+      let gameRunning = false;
+
+      let peer;
+      let conn = null;
+      let isHost = false;
+      let remotePaddleY = 0;
+      let currentRoomId = '';
+      let localStream;
+
+      const PEER_CONFIG = {
+        host: '0.peerjs.com',
+        port: 443,
+        secure: true
+      };
+
+      const urlParams = new URLSearchParams(window.location.search);
+      const roomFromUrl = urlParams.get('room');
+
+      function resizeCanvas() {
+        const gamePanel = document.getElementById('game-panel');
+        canvasWidth = gamePanel.clientWidth;
+        canvasHeight = gamePanel.clientHeight;
+        canvas.width = canvasWidth;
+        canvas.height = canvasHeight;
+        playerPaddle.y = (canvasHeight - paddleHeight) / 2;
+        aiPaddle.x = canvasWidth - paddleWidth - 20;
+        aiPaddle.y = (canvasHeight - paddleHeight) / 2;
+        resetBall();
+      }
+
+      function resetBall() {
+        ball.x = canvasWidth / 2;
+        ball.y = canvasHeight / 2;
+        const angle = (Math.random() * 0.5 + 0.25) * Math.PI;
+        const dir = Math.random() < 0.5 ? 1 : -1;
+        ball.vx = ball.speed * Math.cos(angle) * dir;
+        ball.vy = ball.speed * Math.sin(angle) * (Math.random() < 0.5 ? 1 : -1);
+      }
+
+      function updateScoreDisplay() {
+        scoreCenter.textContent = `${scorePlayer} : ${scoreAI}`;
+      }
+
+      function gameLoop() {
+        if (!canvasWidth || !canvasHeight) {
+          requestAnimationFrame(gameLoop);
+          return;
+        }
+
+        if (handDetected) {
+          let desiredCenterY = targetHandY * canvasHeight;
+          desiredCenterY = Math.max(paddleHeight / 2, Math.min(canvasHeight - paddleHeight / 2, desiredCenterY));
+          playerPaddle.y = desiredCenterY - paddleHeight / 2;
+          if (!gameRunning) gameRunning = true;
+        } else {
+          gameRunning = false;
+        }
+
+        if (gameRunning) {
+          if (!conn || !conn.open) {
+            const aiCenterY = aiPaddle.y + paddleHeight / 2;
+            if (ball.y < aiCenterY - 5) aiPaddle.y -= 4.5;
+            else if (ball.y > aiCenterY + 5) aiPaddle.y += 4.5;
+          } else {
+            aiPaddle.y = remotePaddleY;
+          }
+          aiPaddle.y = Math.max(0, Math.min(canvasHeight - paddleHeight, aiPaddle.y));
+
+          if (!conn || !conn.open || isHost) {
+            ball.x += ball.vx;
+            ball.y += ball.vy;
+
+            if (ball.y - ball.radius <= 0 || ball.y + ball.radius >= canvasHeight) {
+              ball.vy *= -1;
+              ball.y = Math.max(ball.radius, Math.min(canvasHeight - ball.radius, ball.y));
+            }
+
+            if (ball.vx < 0 && ball.x - ball.radius <= playerPaddle.x + paddleWidth &&
+                ball.x - ball.radius >= playerPaddle.x &&
+                ball.y >= playerPaddle.y && ball.y <= playerPaddle.y + paddleHeight) {
+              const hit = (ball.y - playerPaddle.y) / paddleHeight;
+              const angle = (hit - 0.5) * (Math.PI / 3);
+              ball.vx = ball.speed * Math.cos(angle);
+              ball.vy = ball.speed * Math.sin(angle);
+              if (ball.vx < 0) ball.vx *= -1;
+              ball.speed = Math.min(ball.speed + 0.2, 12);
+            }
+            if (ball.vx > 0 && ball.x + ball.radius >= aiPaddle.x &&
+                ball.x + ball.radius <= aiPaddle.x + paddleWidth &&
+                ball.y >= aiPaddle.y && ball.y <= aiPaddle.y + paddleHeight) {
+              const hit = (ball.y - aiPaddle.y) / paddleHeight;
+              const angle = (hit - 0.5) * (Math.PI / 3);
+              ball.vx = -ball.speed * Math.cos(angle);
+              ball.vy = ball.speed * Math.sin(angle);
+              if (ball.vx > 0) ball.vx *= -1;
+              ball.speed = Math.min(ball.speed + 0.2, 12);
+            }
+
+            if (ball.x + ball.radius < 0) { scoreAI++; updateScoreDisplay(); resetBall(); }
+            else if (ball.x - ball.radius > canvasWidth) { scorePlayer++; updateScoreDisplay(); resetBall(); }
+
+            if (conn && conn.open && isHost) {
+              try {
+                conn.send(JSON.stringify({
+                  type: 'gameState',
+                  ball: { x: ball.x, y: ball.y, vx: ball.vx, vy: ball.vy, speed: ball.speed },
+                  score: { player: scorePlayer, ai: scoreAI },
+                }));
+              } catch(e) {}
+            }
+          } else {
+            ball.x += ball.vx;
+            ball.y += ball.vy;
+            if (ball.y < ball.radius) ball.y = ball.radius;
+            if (ball.y > canvasHeight - ball.radius) ball.y = canvasHeight - ball.radius;
+          }
+
+          if (conn && conn.open) {
+            try { conn.send(JSON.stringify({ type: 'paddleUpdate', y: playerPaddle.y })); } catch(e) {}
+          }
+        }
+
+        ctx.clearRect(0, 0, canvasWidth, canvasHeight);
+        ctx.fillStyle = 'white';
+        ctx.fillRect(playerPaddle.x, playerPaddle.y, paddleWidth, paddleHeight);
+        ctx.fillRect(aiPaddle.x, aiPaddle.y, paddleWidth, paddleHeight);
+        ctx.beginPath();
+        ctx.arc(ball.x, ball.y, ball.radius, 0, Math.PI*2);
+        ctx.fill();
+        ctx.closePath();
+
+        requestAnimationFrame(gameLoop);
+      }
+
+      // ---------- MediaPipe ----------
+      function onResults(results) {
+        if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
+          const lm = results.multiHandLandmarks[0];
+          targetHandY = (lm[4].y + lm[8].y) / 2;
+          handDetected = true;
+        } else {
+          handDetected = false;
+        }
+      }
+
+      async function initCameraAndMediaPipe() {
+        localStream = await navigator.mediaDevices.getUserMedia({
+          video: { width: { ideal: 640 }, height: { ideal: 480 }, facingMode: 'user' },
+          audio: true
+        });
+        inputVideo.srcObject = localStream;
+        inputVideo.muted = true;
+        updateMicStatus();
+
+        const hands = new Hands({
+          locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`
+        });
+        hands.setOptions({
+          maxNumHands: 1,
+          modelComplexity: 1,
+          minDetectionConfidence: 0.7,
+          minTrackingConfidence: 0.5
+        });
+        hands.onResults(onResults);
+        async function detectLoop() {
+          if (inputVideo.readyState >= 2) await hands.send({ image: inputVideo });
+          requestAnimationFrame(detectLoop);
+        }
+        detectLoop();
+      }
+
+      function updateMicStatus() {
+        if (!localStream) return;
+        const audioTrack = localStream.getAudioTracks()[0];
+        if (audioTrack && audioTrack.enabled) {
+          micStatus.textContent = '🎤';
+          micStatus.style.color = '#0f0';
+        } else {
+          micStatus.textContent = '🔇';
+          micStatus.style.color = '#ff0';
+        }
+      }
+
+      // ---------- PeerJS ----------
+      function startPeer(roomId) {
+        if (peer) {
+          peer.destroy();
+          conn = null;
+        }
+
+        peer = new Peer(roomId, PEER_CONFIG);
+        currentRoomId = roomId;
+
+        peer.on('open', (id) => {
+          roomIdDisplay.textContent = t('room_prefix') + ' ' + id;
+          if (isHost) {
+            setStatus('waiting');
+          } else {
+            setStatus('connecting');
+          }
+          joinForm.style.display = 'none';
+          copyLinkBtn.style.display = 'inline-block';
+        });
+
+        peer.on('call', (call) => {
+          call.answer(localStream);
+          call.on('stream', (stream) => {
+            remoteVideo.srcObject = stream;
+            setStatus('opponent_connected');
+          });
+        });
+
+        peer.on('connection', (connection) => {
+          conn = connection;
+          setupDataConnection(conn);
+        });
+
+        if (!isHost) {
+          const call = peer.call(roomId, localStream);
+          call.on('stream', (stream) => {
+            remoteVideo.srcObject = stream;
+            setStatus('opponent_connected');
+          });
+          conn = peer.connect(roomId, { reliable: true });
+          setupDataConnection(conn);
+        }
+
+        peer.on('error', (err) => {
+          console.error('PeerJS error:', err);
+          setStatus('connection_error');
+        });
+      }
+
+      function setupDataConnection(connection) {
+        conn = connection;
+        conn.on('open', () => {
+          if (isHost) {
+            conn.send(JSON.stringify({ type: 'init', host: true }));
+          }
+        });
+        conn.on('data', (data) => {
+          try {
+            const msg = JSON.parse(data);
+            if (msg.type === 'paddleUpdate') {
+              remotePaddleY = msg.y;
+            } else if (msg.type === 'gameState' && !isHost) {
+              ball.x = msg.ball.x;
+              ball.y = msg.ball.y;
+              ball.vx = msg.ball.vx;
+              ball.vy = msg.ball.vy;
+              ball.speed = msg.ball.speed;
+              scorePlayer = msg.score.player;
+              scoreAI = msg.score.ai;
+              updateScoreDisplay();
+            }
+          } catch(e) {}
+        });
+        conn.on('close', () => {
+          conn = null;
+          remotePaddleY = 0;
+          if (remoteVideo.srcObject) remoteVideo.srcObject = null;
+          setStatus('opponent_disconnected');
+        });
+        conn.on('error', (err) => console.error('DataChannel error:', err));
+      }
+
+      function generateRoomId() {
+        return 'pong-' + Math.random().toString(36).substring(2, 10);
+      }
+
+      copyLinkBtn.addEventListener('click', () => {
+        const url = new URL(window.location.href);
+        url.searchParams.set('room', currentRoomId);
+        navigator.clipboard.writeText(url.toString()).then(() => {
+          setStatus('link_copied');
+          setTimeout(() => {
+            if (window._lastStatusKey === 'link_copied') {
+              // Сбрасываем статус на предыдущее состояние
+              if (conn && conn.open) setStatus('opponent_connected');
+              else if (isHost) setStatus('waiting');
+              else setStatus('connecting');
+            }
+          }, 2000);
+        });
+      });
+
+      joinBtn.addEventListener('click', () => {
+        const newRoom = roomInput.value.trim();
+        if (newRoom) {
+          isHost = false;
+          const url = new URL(window.location.href);
+          url.searchParams.set('room', newRoom);
+          window.history.replaceState({}, '', url.toString());
+          startPeer(newRoom);
+        }
+      });
+
+      micStatus.addEventListener('click', () => {
+        if (localStream) {
+          const audioTrack = localStream.getAudioTracks()[0];
+          if (audioTrack) {
+            audioTrack.enabled = !audioTrack.enabled;
+            updateMicStatus();
+          }
+        }
+      });
+
+      // ---------- Старт ----------
+      window.addEventListener('load', async () => {
+        // Устанавливаем язык
+        currentLang = detectLanguage();
+        applyTranslations();
+        updateLangSwitchButton();
+
+        try {
+          await initCameraAndMediaPipe();
+          resizeCanvas();
+          updateScoreDisplay();
+          window.addEventListener('resize', resizeCanvas);
+          gameLoop();
+
+          if (roomFromUrl) {
+            isHost = false;
+            startPeer(roomFromUrl);
+          } else {
+            isHost = true;
+            const newRoom = generateRoomId();
+            window.history.replaceState({}, '', `${location.pathname}?room=${newRoom}`);
+            startPeer(newRoom);
+          }
+
+          joinForm.style.display = 'flex';
+        } catch (err) {
+          console.error(err);
+          alert(t('alert_camera'));
+        }
+      });
+    })();
+  </script>
+</body>
+</html>
