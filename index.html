@@ -280,7 +280,7 @@
           try { dc.send(JSON.stringify({ type: 'paddle', y: player.y })); } catch(e) {}
         }
 
-        // Физика мяча (локально или хост)
+        // Физика мяча (локально или хост) – ВСЕГДА выполняется, без проверки hand/running
         if (!dc || dc.readyState !== 'open' || isHost) {
           ball.x += ball.vx;
           ball.y += ball.vy;
@@ -325,8 +325,8 @@
             } catch(e) {}
           }
         } else {
-          // Гость: обновляем мяч по данным хоста (уже получены в onmessage)
-          // ничего не делаем, мяч уже установлен
+          // Гость: мяч уже двигается по данным от хоста (полученным в onmessage)
+          // ничего не делаем
         }
 
         // Отрисовка
@@ -574,7 +574,7 @@
           await initCam();
           resize(); updateScore();
           window.addEventListener('resize', resize);
-          loop(); // игра запускается сразу, мяч движется всегда
+          loop();
           if (urlRoom) { isHost = false; roomId = urlRoom; showRoom(urlRoom); setStatus('status_waiting'); }
           else { isHost = true; roomId = genRoom(); history.replaceState({}, '', `${location.pathname}?room=${roomId}`); showRoom(roomId); setStatus('status_waiting'); }
         } catch (e) { alert(t('alert_camera')); }
