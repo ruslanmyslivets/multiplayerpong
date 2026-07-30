@@ -30,6 +30,6 @@
 
 ## 🛠 Технологии / Technologies
 - Handpose
-- PeerJS
+- SDP
 - WebRTC
 - HTML5 Canvas
