@@ -15,7 +15,8 @@
     #remote-video { width: 100%; height: 100%; object-fit: cover; position: absolute; top: 0; left: 0; }
     #game-canvas { position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; }
     #ui { position: absolute; bottom: 20px; left: 20px; color: white; font-size: 14px; background: rgba(0,0,0,0.8); padding: 8px 15px; border-radius: 8px; z-index: 25; display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
-    #signaling-panel { position: absolute; bottom: 20px; right: 20px; color: white; font-size: 12px; background: rgba(0,0,0,0.9); padding: 10px; border-radius: 8px; z-index: 25; display: flex; flex-direction: column; gap: 6px; max-width: 320px; }
+    #signaling-panel { position: absolute; bottom: 20px; right: 20px; color: white; font-size: 12px; background: rgba(0,0,0,0.9); padding: 10px; border-radius: 8px; z-index: 25; display: flex; flex-direction: column; gap: 6px; max-width: 320px; transition: opacity 0.4s; }
+    #signaling-panel.hidden { opacity: 0; pointer-events: none; }
     .sdp-block { display: flex; flex-direction: column; gap: 2px; }
     .sdp-block textarea { width: 100%; height: 55px; font-size: 10px; background: #333; color: white; border: 1px solid #888; resize: none; font-family: monospace; }
     .copy-sdp-btn { font-size: 10px; padding: 2px 6px; background: #555; color: white; border: 1px solid #aaa; border-radius: 3px; cursor: pointer; align-self: flex-end; }
@@ -32,6 +33,7 @@
     #join-btn { background: #444; color: white; border: 1px solid white; padding: 4px 10px; border-radius: 4px; cursor: pointer; font-size: 12px; }
     .instruction { font-size: 11px; color: #ccc; margin-top: 2px; }
     .warning { color: #ff8; font-size: 11px; }
+    #disconnect-btn { position: absolute; bottom: 20px; right: 20px; z-index: 30; background: #a33; color: white; border: 1px solid white; padding: 6px 14px; border-radius: 6px; cursor: pointer; font-size: 13px; display: none; }
   </style>
 </head>
 <body>
@@ -67,10 +69,10 @@
       <button id="accept-offer-btn">Принять предложение и ответить (гость)</button>
       <button id="send-answer-btn" style="display:none;">📤 Отправить ответ хосту</button>
       <button id="accept-answer-btn" disabled>Принять ответ (хост)</button>
-      <button id="close-connection-btn">Закрыть соединение</button>
       <div id="instruction" class="instruction"></div>
       <div id="sdp-warning" class="warning"></div>
     </div>
+    <button id="disconnect-btn">🔌 Отключиться</button>
     <button id="lang-switch">🌐</button>
   </div>
 
@@ -96,7 +98,7 @@
           accept_offer: 'Принять предложение и ответить (гость)',
           accept_answer: 'Принять ответ (хост)',
           send_answer: '📤 Отправить ответ хосту',
-          close_connection: 'Закрыть соединение',
+          close_connection: 'Отключиться',
           status_waiting: 'Ожидание соперника...',
           status_gathering: 'Сбор ICE-кандидатов...',
           status_offer_ready: 'Предложение готово, скопируйте SDP',
@@ -135,7 +137,7 @@
           accept_offer: 'Accept Offer & Answer (guest)',
           accept_answer: 'Accept Answer (host)',
           send_answer: '📤 Send answer to host',
-          close_connection: 'Close Connection',
+          close_connection: 'Disconnect',
           status_waiting: 'Waiting for opponent...',
           status_gathering: 'Gathering ICE candidates...',
           status_offer_ready: 'Offer ready, copy SDP',
@@ -185,7 +187,7 @@
         document.querySelector('#accept-offer-btn').textContent = t('accept_offer');
         document.querySelector('#accept-answer-btn').textContent = t('accept_answer');
         document.querySelector('#send-answer-btn').textContent = t('send_answer');
-        document.querySelector('#close-connection-btn').textContent = t('close_connection');
+        document.querySelector('#disconnect-btn').textContent = '🔌 ' + t('close_connection');
         document.querySelector('#mic-status').title = t('mic_title');
         document.querySelector('#copy-link-btn').textContent = t('copy_link');
         document.querySelector('#join-btn').textContent = t('join');
@@ -227,13 +229,13 @@
       const acceptOfferBtn = document.getElementById('accept-offer-btn');
       const sendAnswerBtn = document.getElementById('send-answer-btn');
       const acceptAnswerBtn = document.getElementById('accept-answer-btn');
-      const closeConnectionBtn = document.getElementById('close-connection-btn');
+      const disconnectBtn = document.getElementById('disconnect-btn');
 
       // ---------- Игра ----------
       let canvasWidth, canvasHeight;
       const paddleWidth = 12, paddleHeight = 80;
-      const playerPaddle = { x: 20, y: 0 };   // игрок слева
-      const aiPaddle = { x: 0, y: 0 };       // соперник справа
+      const playerPaddle = { x: 20, y: 0 };
+      const aiPaddle = { x: 0, y: 0 };
       const ball = { x: 0, y: 0, radius: 8, vx: 0, vy: 0, speed: 5 };
       let scorePlayer = 0, scoreAI = 0;
       let targetHandY = 0.5;
@@ -264,7 +266,6 @@
         canvasHeight = gamePanel.clientHeight;
         canvas.width = canvasWidth;
         canvas.height = canvasHeight;
-        // Жёстко закрепляем стороны
         playerPaddle.x = 20;
         aiPaddle.x = canvasWidth - paddleWidth - 20;
         playerPaddle.y = (canvasHeight - paddleHeight) / 2;
@@ -289,7 +290,6 @@
           return;
         }
 
-        // Управление игроком (рука)
         if (handDetected) {
           let desiredCenterY = targetHandY * canvasHeight;
           desiredCenterY = Math.max(paddleHeight / 2, Math.min(canvasHeight - paddleHeight / 2, desiredCenterY));
@@ -299,26 +299,24 @@
           gameRunning = false;
         }
 
-        // Обновляем позицию соперника (ИИ или удалённый игрок)
+        // Обновление соперника
         if (!dc || dc.readyState !== 'open') {
-          // ИИ
           if (gameRunning) {
             const aiCenterY = aiPaddle.y + paddleHeight / 2;
             if (ball.y < aiCenterY - 5) aiPaddle.y -= 4.5;
             else if (ball.y > aiCenterY + 5) aiPaddle.y += 4.5;
           }
         } else {
-          // удалённый игрок
           aiPaddle.y = remotePaddleY;
         }
         aiPaddle.y = Math.max(0, Math.min(canvasHeight - paddleHeight, aiPaddle.y));
 
-        // Отправляем свою позицию, если есть соединение и рука обнаружена
+        // Отправка своей позиции
         if (dc && dc.readyState === 'open' && handDetected) {
           try { dc.send(JSON.stringify({ type: 'paddleUpdate', y: playerPaddle.y })); } catch(e) {}
         }
 
-        // Физика мяча (только хост или без соединения)
+        // Физика мяча
         if (!dc || dc.readyState !== 'open' || isHost) {
           if (gameRunning) {
             ball.x += ball.vx;
@@ -329,7 +327,6 @@
               ball.y = Math.max(ball.radius, Math.min(canvasHeight - ball.radius, ball.y));
             }
 
-            // Столкновения
             if (ball.vx < 0 && ball.x - ball.radius <= playerPaddle.x + paddleWidth &&
                 ball.x - ball.radius >= playerPaddle.x &&
                 ball.y >= playerPaddle.y && ball.y <= playerPaddle.y + paddleHeight) {
@@ -355,7 +352,6 @@
             else if (ball.x - ball.radius > canvasWidth) { scorePlayer++; updateScoreDisplay(); resetBall(); }
           }
 
-          // Отправка состояния игры гостю
           if (dc && dc.readyState === 'open' && isHost) {
             try {
               dc.send(JSON.stringify({
@@ -366,23 +362,14 @@
             } catch(e) {}
           }
         } else {
-          // Гость применяет состояние от хоста
-          if (gameRunning) {
-            ball.x += ball.vx;
-            ball.y += ball.vy;
-            if (ball.y < ball.radius) ball.y = ball.radius;
-            if (ball.y > canvasHeight - ball.radius) ball.y = canvasHeight - ball.radius;
-          }
+          // Гость: ничего не делаем с мячом, он уже обновлён через onmessage
         }
 
         // Отрисовка
         ctx.clearRect(0, 0, canvasWidth, canvasHeight);
         ctx.fillStyle = 'white';
-        // Игрок слева
         ctx.fillRect(playerPaddle.x, playerPaddle.y, paddleWidth, paddleHeight);
-        // Соперник справа
         ctx.fillRect(aiPaddle.x, aiPaddle.y, paddleWidth, paddleHeight);
-        // Мяч
         ctx.beginPath();
         ctx.arc(ball.x, ball.y, ball.radius, 0, Math.PI*2);
         ctx.fill();
@@ -459,10 +446,12 @@
         console.log('PeerConnection создан');
 
         newPc.ontrack = (event) => {
-          console.log('Получен удалённый трек');
           if (event.streams && event.streams[0]) {
             remoteVideo.srcObject = event.streams[0];
             setStatus('status_connected');
+            // Скрываем панель сигнализации, показываем кнопку "Отключиться"
+            signalingPanel.classList.add('hidden');
+            disconnectBtn.style.display = 'block';
           }
         };
 
@@ -470,8 +459,18 @@
           const state = newPc.iceConnectionState;
           console.log('ICE состояние:', state);
           if (state === 'checking') { setIceStatus('ice_checking'); setStatus('status_connecting'); }
-          else if (state === 'connected' || state === 'completed') { setIceStatus('ice_connected'); setStatus('status_connected'); }
-          else if (state === 'disconnected' || state === 'failed') { setIceStatus('ice_disconnected'); setStatus('status_disconnected'); }
+          else if (state === 'connected' || state === 'completed') {
+            setIceStatus('ice_connected');
+            setStatus('status_connected');
+            signalingPanel.classList.add('hidden');
+            disconnectBtn.style.display = 'block';
+          } else if (state === 'disconnected' || state === 'failed') {
+            setIceStatus('ice_disconnected');
+            setStatus('status_disconnected');
+            // Показываем панель снова, если захотим переподключиться
+            signalingPanel.classList.remove('hidden');
+            disconnectBtn.style.display = 'none';
+          }
         };
 
         if (isHost) {
@@ -479,16 +478,12 @@
           setupDataChannel(newDc);
         } else {
           newPc.ondatachannel = (event) => {
-            console.log('Получен DataChannel');
             setupDataChannel(event.channel);
           };
         }
 
         if (localStream) {
-          localStream.getTracks().forEach(track => {
-            console.log('Добавлен трек:', track.kind);
-            newPc.addTrack(track, localStream);
-          });
+          localStream.getTracks().forEach(track => newPc.addTrack(track, localStream));
         }
 
         pc = newPc;
@@ -496,12 +491,14 @@
       }
 
       function setupDataChannel(channel) {
-        console.log('Настройка DataChannel');
         channel.onopen = () => {
           console.log('DataChannel открыт');
           if (isHost) {
             dc.send(JSON.stringify({ type: 'init', host: true }));
           }
+          // Скрываем панель, показываем кнопку отключения
+          signalingPanel.classList.add('hidden');
+          disconnectBtn.style.display = 'block';
         };
         channel.onmessage = (event) => {
           try {
@@ -526,6 +523,8 @@
           remotePaddleY = 0;
           if (remoteVideo.srcObject) remoteVideo.srcObject = null;
           setStatus('status_disconnected');
+          signalingPanel.classList.remove('hidden');
+          disconnectBtn.style.display = 'none';
         };
         channel.onerror = (err) => console.error('Ошибка DataChannel:', err);
         dc = channel;
@@ -543,7 +542,12 @@
         setIceStatus('');
         setInstruction('');
         document.getElementById('sdp-warning').textContent = '';
+        signalingPanel.classList.remove('hidden');
+        disconnectBtn.style.display = 'none';
+        setStatus('status_disconnected');
       }
+
+      disconnectBtn.addEventListener('click', closeConnection);
 
       // Валидация SDP
       function parseRemoteSDP(text) {
@@ -683,13 +687,6 @@
           acceptAnswerBtn.disabled = false;
           setStatus('status_waiting');
         }
-      });
-
-      closeConnectionBtn.addEventListener('click', () => {
-        closeConnection();
-        setStatus('status_waiting');
-        acceptOfferBtn.disabled = false;
-        createOfferBtn.disabled = false;
       });
 
       // ----- Комната -----
