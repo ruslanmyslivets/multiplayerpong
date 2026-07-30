@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-  <title>MultiCamPong</title>
+  <title>Pong P2P – стабильный MediaPipe</title>
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
     body { background: #000; display: flex; height: 100vh; overflow: hidden; position: relative; font-family: monospace; }
@@ -75,11 +75,11 @@
     <button id="lang-switch">🌐</button>
   </div>
 
-  <!-- Обновлённые стабильные версии MediaPipe -->
-  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils@0.3.1675466862/camera_utils.js" crossorigin="anonymous"></script>
-  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/control_utils@0.6.1675466024/control_utils.js" crossorigin="anonymous"></script>
-  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils@0.3.1675466124/drawing_utils.js" crossorigin="anonymous"></script>
-  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands@0.4.1675469240/hands.js" crossorigin="anonymous"></script>
+  <!-- Стабильная версия MediaPipe Hands без SIMD -->
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils@0.3.1631143084/camera_utils.js" crossorigin="anonymous"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/control_utils@0.6.1631143084/control_utils.js" crossorigin="anonymous"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils@0.3.1631143084/drawing_utils.js" crossorigin="anonymous"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands@0.4.1631143084/hands.js" crossorigin="anonymous"></script>
 
   <script>
     (function() {
@@ -283,7 +283,7 @@
           try { dc.send(JSON.stringify({ type: 'paddle', y: player.y })); } catch(e) {}
         }
 
-        // Физика мяча
+        // Физика мяча (всегда)
         if (!isMultiplayer() || isHost) {
           ball.x += ball.vx;
           ball.y += ball.vy;
@@ -357,7 +357,7 @@
         videoEl.muted = true;
         updateMic();
         const hands = new Hands({
-          locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands@0.4.1675469240/${file}`
+          locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands@0.4.1631143084/${file}`
         });
         hands.setOptions({
           maxNumHands: 1,
@@ -371,10 +371,7 @@
             if (videoEl.readyState >= 2) {
               await hands.send({ image: videoEl });
             }
-          } catch (e) {
-            // Игнорируем единичные ошибки WASM
-            // console.warn('MediaPipe send error:', e);
-          }
+          } catch (e) {}
           requestAnimationFrame(detect);
         }
         detect();
