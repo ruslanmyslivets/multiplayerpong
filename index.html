@@ -75,10 +75,11 @@
     <button id="lang-switch">🌐</button>
   </div>
 
-  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
-  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/control_utils/control_utils.js" crossorigin="anonymous"></script>
-  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js" crossorigin="anonymous"></script>
-  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
+  <!-- Обновлённые стабильные версии MediaPipe -->
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils@0.3.1675466862/camera_utils.js" crossorigin="anonymous"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/control_utils@0.6.1675466024/control_utils.js" crossorigin="anonymous"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils@0.3.1675466124/drawing_utils.js" crossorigin="anonymous"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands@0.4.1675469240/hands.js" crossorigin="anonymous"></script>
 
   <script>
     (function() {
@@ -266,6 +267,7 @@
           cy = Math.max(PH/2, Math.min(ch - PH/2, cy));
           player.y = cy - PH/2;
         }
+
         // ИИ или соперник
         if (!isMultiplayer()) {
           const aiCy = opponent.y + PH/2;
@@ -281,7 +283,7 @@
           try { dc.send(JSON.stringify({ type: 'paddle', y: player.y })); } catch(e) {}
         }
 
-        // Физика мяча (всегда)
+        // Физика мяча
         if (!isMultiplayer() || isHost) {
           ball.x += ball.vx;
           ball.y += ball.vy;
@@ -324,8 +326,6 @@
               }));
             } catch(e) {}
           }
-        } else {
-          // Гость получает данные через onmessage
         }
 
         ctx.clearRect(0, 0, cw, ch);
@@ -345,10 +345,9 @@
           const lm = r.multiHandLandmarks[0];
           handY = (lm[4].y + lm[8].y) / 2;
           hand = true;
-          console.log('hand detected Y:', handY.toFixed(2)); // для проверки
+          console.log('hand detected Y:', handY.toFixed(2));
         } else {
           hand = false;
-          console.log('hand lost');
         }
       }
 
@@ -357,15 +356,28 @@
         videoEl.srcObject = localStream;
         videoEl.muted = true;
         updateMic();
-        const hands = new Hands({ locateFile: f => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${f}` });
-        hands.setOptions({ maxNumHands: 1, modelComplexity: 1, minDetectionConfidence: 0.7, minTrackingConfidence: 0.5 });
+        const hands = new Hands({
+          locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands@0.4.1675469240/${file}`
+        });
+        hands.setOptions({
+          maxNumHands: 1,
+          modelComplexity: 1,
+          minDetectionConfidence: 0.7,
+          minTrackingConfidence: 0.5
+        });
         hands.onResults(onResults);
-        (function detect() {
-          requestAnimationFrame(detect);
-          if (videoEl.readyState >= 2) {
-            hands.send({ image: videoEl });
+        async function detect() {
+          try {
+            if (videoEl.readyState >= 2) {
+              await hands.send({ image: videoEl });
+            }
+          } catch (e) {
+            // Игнорируем единичные ошибки WASM
+            // console.warn('MediaPipe send error:', e);
           }
-        })();
+          requestAnimationFrame(detect);
+        }
+        detect();
       }
 
       function updateMic() {
