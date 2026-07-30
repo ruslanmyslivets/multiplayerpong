@@ -75,6 +75,11 @@
     #status-text { color: #0f0; }
     #ice-status { font-size: 11px; color: #aaa; margin-top: 2px; }
     #mic-status { margin-left: 10px; color: #ff0; cursor: pointer; }
+    #room-id-display { font-weight: bold; color: #fff; }
+    #copy-link-btn { background: #444; color: white; border: 1px solid white; padding: 4px 10px; border-radius: 4px; cursor: pointer; font-size: 12px; }
+    #guest-join-form { display: flex; gap: 5px; align-items: center; }
+    #room-input { padding: 3px 6px; font-size: 13px; width: 120px; border-radius: 4px; border: 1px solid #888; background: #333; color: white; }
+    #join-btn { background: #444; color: white; border: 1px solid white; padding: 4px 10px; border-radius: 4px; cursor: pointer; font-size: 12px; }
   </style>
 </head>
 <body>
@@ -89,11 +94,17 @@
     <video id="remote-video" autoplay playsinline></video>
     <canvas id="game-canvas"></canvas>
     <div id="ui">
+      <span id="room-id-display"></span>
+      <button id="copy-link-btn">Копировать ссылку</button>
       <span id="status-text"></span>
       <span id="ice-status"></span>
       <span id="mic-status" title="Микрофон">🔇</span>
+      <div id="guest-join-form" style="display: none;">
+        <input id="room-input" type="text" placeholder="ID комнаты">
+        <button id="join-btn">Подключиться</button>
+      </div>
     </div>
-    <div id="signaling-panel">
+    <div id="signaling-panel" style="display: none;">
       <span id="sig-title">Ручная сигнализация</span>
       <textarea id="local-sdp" placeholder="Ваш SDP появится здесь" readonly></textarea>
       <textarea id="remote-sdp" placeholder="Вставьте SDP собеседника"></textarea>
@@ -116,6 +127,10 @@
       // ---------- Переводы ----------
       const translations = {
         ru: {
+          room_prefix: 'ID комнаты:',
+          copy_link: 'Копировать ссылку',
+          join: 'Подключиться',
+          room_placeholder: 'ID комнаты',
           signaling_title: 'Ручная сигнализация',
           local_sdp_placeholder: 'Ваш SDP появится здесь',
           remote_sdp_placeholder: 'Вставьте SDP собеседника',
@@ -123,7 +138,7 @@
           accept_offer: 'Принять предложение и ответить (гость)',
           accept_answer: 'Принять ответ (хост)',
           close_connection: 'Закрыть соединение',
-          status_waiting: 'Ожидание начала сигнализации',
+          status_waiting: 'Ожидание соперника...',
           status_gathering: 'Сбор ICE-кандидатов...',
           status_offer_ready: 'Предложение готово, скопируйте SDP',
           status_waiting_answer: 'Ожидание ответа...',
@@ -136,8 +151,14 @@
           ice_checking: 'Проверка соединения...',
           ice_connected: 'Канал установлен',
           ice_disconnected: 'Канал разорван',
+          link_copied: 'Ссылка скопирована!',
+          host_waiting: 'Хост: отправьте SDP гостю после нажатия "Создать предложение"',
         },
         en: {
+          room_prefix: 'Room ID:',
+          copy_link: 'Copy link',
+          join: 'Connect',
+          room_placeholder: 'Room ID',
           signaling_title: 'Manual Signaling',
           local_sdp_placeholder: 'Your SDP will appear here',
           remote_sdp_placeholder: 'Paste opponent SDP',
@@ -145,7 +166,7 @@
           accept_offer: 'Accept Offer & Answer (guest)',
           accept_answer: 'Accept Answer (host)',
           close_connection: 'Close Connection',
-          status_waiting: 'Waiting to start signaling',
+          status_waiting: 'Waiting for opponent...',
           status_gathering: 'Gathering ICE candidates...',
           status_offer_ready: 'Offer ready, copy SDP',
           status_waiting_answer: 'Waiting for answer...',
@@ -158,6 +179,8 @@
           ice_checking: 'Checking connection...',
           ice_connected: 'Channel established',
           ice_disconnected: 'Channel disconnected',
+          link_copied: 'Link copied!',
+          host_waiting: 'Host: send SDP to guest after clicking "Create Offer"',
         }
       };
 
@@ -183,6 +206,9 @@
         document.querySelector('#accept-answer-btn').textContent = t('accept_answer');
         document.querySelector('#close-connection-btn').textContent = t('close_connection');
         document.querySelector('#mic-status').title = t('mic_title');
+        document.querySelector('#copy-link-btn').textContent = t('copy_link');
+        document.querySelector('#join-btn').textContent = t('join');
+        document.querySelector('#room-input').placeholder = t('room_placeholder');
         if (window._iceStatusKey) setIceStatus(window._iceStatusKey);
         if (window._statusKey) setStatus(window._statusKey);
       }
@@ -208,7 +234,13 @@
       const ctx = canvas.getContext('2d');
       const remoteVideo = document.getElementById('remote-video');
       const scoreCenter = document.getElementById('score-center');
+      const roomIdDisplay = document.getElementById('room-id-display');
+      const copyLinkBtn = document.getElementById('copy-link-btn');
+      const guestJoinForm = document.getElementById('guest-join-form');
+      const roomInput = document.getElementById('room-input');
+      const joinBtn = document.getElementById('join-btn');
       const micStatus = document.getElementById('mic-status');
+      const signalingPanel = document.getElementById('signaling-panel');
       const localSdpText = document.getElementById('local-sdp');
       const remoteSdpText = document.getElementById('remote-sdp');
       const createOfferBtn = document.getElementById('create-offer-btn');
@@ -233,14 +265,17 @@
       let isHost = false;
       let remotePaddleY = 0;
       let localStream;
+      let currentRoomId = '';
 
       const rtcConfig = {
         iceServers: [
           { urls: 'stun:stun.l.google.com:19302' },
-          // опционально TURN
           // { urls: 'turn:openrelay.metered.ca:80', username: 'openrelayproject', credential: 'openrelayproject' }
         ]
       };
+
+      const urlParams = new URLSearchParams(window.location.search);
+      const roomFromUrl = urlParams.get('room');
 
       function resizeCanvas() {
         const gamePanel = document.getElementById('game-panel');
@@ -417,7 +452,7 @@
         }
       });
 
-      // ---------- WebRTC (ручная сигнализация) ----------
+      // ---------- WebRTC ----------
       function setupPeerConnection() {
         if (pc) {
           pc.close();
@@ -448,10 +483,6 @@
             setIceStatus('ice_disconnected');
             setStatus('status_disconnected');
           }
-        };
-
-        pc.onicegatheringstatechange = () => {
-          // Будем использовать в createOffer/acceptOffer
         };
 
         if (isHost) {
@@ -511,7 +542,7 @@
         setIceStatus('');
       }
 
-      // Кнопки
+      // ----- Сигнализация -----
       createOfferBtn.addEventListener('click', async () => {
         isHost = true;
         closeConnection();
@@ -521,7 +552,6 @@
         const offer = await pc.createOffer();
         await pc.setLocalDescription(offer);
 
-        // Ждём завершения сбора кандидатов
         await new Promise(resolve => {
           if (pc.iceGatheringState === 'complete') resolve();
           else pc.onicegatheringstatechange = () => {
@@ -558,7 +588,7 @@
           });
 
           localSdpText.value = JSON.stringify(pc.localDescription);
-          setStatus('status_waiting_answer'); // для гостя это означает, что он отправил answer
+          setStatus('status_waiting_answer');
         } catch (e) {
           console.error(e);
           alert(t('alert_bad_sdp'));
@@ -587,7 +617,59 @@
         setStatus('status_waiting');
       });
 
-      // ---------- Старт ----------
+      // ----- Комната и ссылки -----
+      function generateRoomId() {
+        return 'pong-' + Math.random().toString(36).substring(2, 10);
+      }
+
+      function updateRoomDisplay(roomId) {
+        roomIdDisplay.textContent = t('room_prefix') + ' ' + roomId;
+        // Если хост – показываем кнопку копирования
+        if (isHost) {
+          copyLinkBtn.style.display = 'inline-block';
+          guestJoinForm.style.display = 'none';
+          signalingPanel.style.display = 'block'; // покажем сигнализацию для хоста
+        } else {
+          copyLinkBtn.style.display = 'none';
+          // Гость: если перешёл по ссылке, то скрываем форму ввода, иначе покажем
+          if (roomFromUrl) {
+            guestJoinForm.style.display = 'none';
+            signalingPanel.style.display = 'none'; // не нужна, если всё автоматически
+          } else {
+            guestJoinForm.style.display = 'flex';
+            signalingPanel.style.display = 'block'; // чтобы вставить SDP
+          }
+        }
+      }
+
+      copyLinkBtn.addEventListener('click', () => {
+        const url = new URL(window.location.href);
+        url.searchParams.set('room', currentRoomId);
+        navigator.clipboard.writeText(url.toString()).then(() => {
+          setStatus('link_copied');
+          setTimeout(() => {
+            if (window._statusKey === 'link_copied') setStatus('status_waiting');
+          }, 2000);
+        });
+      });
+
+      joinBtn.addEventListener('click', () => {
+        const newRoom = roomInput.value.trim();
+        if (newRoom) {
+          isHost = false;
+          currentRoomId = newRoom;
+          const url = new URL(window.location.href);
+          url.searchParams.set('room', newRoom);
+          window.history.replaceState({}, '', url.toString());
+          updateRoomDisplay(newRoom);
+          // Здесь сигнализация нужна ручная – показываем панель
+          signalingPanel.style.display = 'block';
+          guestJoinForm.style.display = 'none';
+          setStatus('status_waiting');
+        }
+      });
+
+      // При загрузке определяем роль
       window.addEventListener('load', async () => {
         currentLang = detectLanguage();
         setLanguage(currentLang);
@@ -598,7 +680,29 @@
           updateScoreDisplay();
           window.addEventListener('resize', resizeCanvas);
           gameLoop();
-          setStatus('status_waiting');
+
+          if (roomFromUrl) {
+            // Гость по ссылке
+            isHost = false;
+            currentRoomId = roomFromUrl;
+            updateRoomDisplay(roomFromUrl);
+            // Здесь не нужна сигнализация, но нужно автоматически создать offer?
+            // В случае полной автоматики нужен PeerJS, а у нас ручная.
+            // Для ручной сигнализации гостю нужно получить offer от хоста.
+            // Поэтому показываем сигнализацию, но скрываем guest-join-form.
+            signalingPanel.style.display = 'block';
+            setStatus('status_waiting');
+            // Хост должен нажать "Создать предложение" и передать SDP.
+            // Упростим: если гость по ссылке, то сигнализация ручная.
+          } else {
+            // Хост
+            isHost = true;
+            currentRoomId = generateRoomId();
+            updateRoomDisplay(currentRoomId);
+            signalingPanel.style.display = 'block';
+            setStatus('status_waiting');
+            window.history.replaceState({}, '', `${location.pathname}?room=${currentRoomId}`);
+          }
         } catch (err) {
           console.error(err);
           alert(t('alert_camera'));
