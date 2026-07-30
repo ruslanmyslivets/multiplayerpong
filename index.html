@@ -15,8 +15,7 @@
     #remote-video { width: 100%; height: 100%; object-fit: cover; position: absolute; top: 0; left: 0; }
     #game-canvas { position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; }
     #ui { position: absolute; bottom: 20px; left: 20px; color: white; font-size: 14px; background: rgba(0,0,0,0.8); padding: 8px 15px; border-radius: 8px; z-index: 25; display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
-    #signaling-panel { position: absolute; bottom: 20px; right: 20px; color: white; font-size: 12px; background: rgba(0,0,0,0.9); padding: 10px; border-radius: 8px; z-index: 25; display: flex; flex-direction: column; gap: 6px; max-width: 320px; transition: opacity 0.4s; }
-    #signaling-panel.hidden { opacity: 0; pointer-events: none; }
+    #signaling-panel { position: absolute; bottom: 20px; right: 20px; color: white; font-size: 12px; background: rgba(0,0,0,0.9); padding: 10px; border-radius: 8px; z-index: 25; display: flex; flex-direction: column; gap: 6px; max-width: 320px; }
     .sdp-block { display: flex; flex-direction: column; gap: 2px; }
     .sdp-block textarea { width: 100%; height: 55px; font-size: 10px; background: #333; color: white; border: 1px solid #888; resize: none; font-family: monospace; }
     .copy-sdp-btn { font-size: 10px; padding: 2px 6px; background: #555; color: white; border: 1px solid #aaa; border-radius: 3px; cursor: pointer; align-self: flex-end; }
@@ -212,7 +211,6 @@
       const roomInput = document.getElementById('room-input');
       const joinBtn = document.getElementById('join-btn');
       const micBtn = document.getElementById('mic-status');
-      const sigPanel = document.getElementById('signaling-panel');
       const localSdp = document.getElementById('local-sdp');
       const remoteSdp = document.getElementById('remote-sdp');
       const copySdpBtn = document.getElementById('copy-local-sdp');
@@ -363,8 +361,7 @@
           if (e.streams?.[0]) {
             remoteVideo.srcObject = e.streams[0];
             setStatus('status_connected');
-            // Скрываем панель ТОЛЬКО здесь, когда реально появилось видео
-            sigPanel.classList.add('hidden');
+            // Панель не скрываем
             disconnectBtn.style.display = 'block';
           }
         };
@@ -373,13 +370,12 @@
           if (s === 'checking') { setIce('ice_checking'); setStatus('status_connecting'); }
           else if (s === 'connected' || s === 'completed') {
             setIce('ice_connected');
-            // Не скрываем панель! Только меняем статус
             setStatus('status_connected');
+            // Панель не трогаем, просто показываем кнопку
             disconnectBtn.style.display = 'block';
           } else if (s === 'disconnected' || s === 'failed') {
             setIce('ice_disconnected');
             setStatus('status_disconnected');
-            sigPanel.classList.remove('hidden');
             disconnectBtn.style.display = 'none';
           }
         };
@@ -396,7 +392,7 @@
 
       function setupDC(ch) {
         ch.onopen = () => {
-          // панель остаётся видимой
+          // панель не скрываем
           if (isHost) {
             ch.send(JSON.stringify({
               type: 'state',
@@ -421,7 +417,6 @@
           dc = null; remoteY = 0;
           if (remoteVideo.srcObject) remoteVideo.srcObject = null;
           setStatus('status_disconnected');
-          sigPanel.classList.remove('hidden');
           disconnectBtn.style.display = 'none';
         };
         dc = ch;
@@ -437,7 +432,6 @@
         acceptAnswer.disabled = true;
         sendAnswer.style.display = 'none';
         setIce(''); setInstr('');
-        sigPanel.classList.remove('hidden');
         disconnectBtn.style.display = 'none';
         setStatus('status_disconnected');
       }
@@ -532,12 +526,12 @@
         if (isHost) {
           copyLinkBtn.style.display = 'inline-block';
           joinForm.style.display = 'none';
-          sigPanel.style.display = 'block';
+          document.getElementById('signaling-panel').style.display = 'block';
           setInstr('instruction_host');
         } else {
           copyLinkBtn.style.display = 'none';
           joinForm.style.display = urlRoom ? 'none' : 'flex';
-          sigPanel.style.display = 'block';
+          document.getElementById('signaling-panel').style.display = 'block';
           setInstr('instruction_guest');
         }
       }
