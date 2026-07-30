@@ -166,7 +166,7 @@
           status_connected: 'Соперник подключился!',
           status_disconnected: 'Соперник отключился',
           alert_camera: 'Не удалось запустить камеру/микрофон. Проверьте разрешения и HTTPS.',
-          alert_bad_sdp: 'Ошибка: неверный формат SDP. Скопируйте весь текст, включая фигурные скобки.',
+          alert_bad_sdp: 'Ошибка: неверный формат SDP. Убедитесь, что вы скопировали текст полностью, включая фигурные скобки. Подробности в консоли (F12).',
           mic_title: 'Микрофон',
           ice_checking: 'Проверка соединения...',
           ice_connected: 'Канал установлен',
@@ -178,6 +178,9 @@
           instruction_guest: 'Вставьте SDP хоста выше и нажмите "Принять предложение".',
           instruction_host: 'Создайте предложение, отправьте его гостю. После получения ответа вставьте его и нажмите "Принять ответ".',
           answer_ready: 'Ваш ответ готов! Нажмите "Отправить ответ хосту", скопируйте SDP и передайте его хосту.',
+          alert_empty_sdp: 'Поле SDP не должно быть пустым.',
+          alert_invalid_json: 'Текст не является корректным JSON. Проверьте, что скопировали весь объект с фигурными скобками.',
+          alert_missing_type_sdp: 'Объект должен содержать поля "type" и "sdp". Возможно, вы скопировали не тот фрагмент.',
         },
         en: {
           room_prefix: 'Room ID:',
@@ -200,7 +203,7 @@
           status_connected: 'Opponent connected!',
           status_disconnected: 'Opponent disconnected',
           alert_camera: 'Could not access camera/mic. Check permissions and HTTPS.',
-          alert_bad_sdp: 'Error: invalid SDP format. Copy the entire text including curly braces.',
+          alert_bad_sdp: 'Error: invalid SDP format. Make sure you copied the full text including curly braces. Details in console (F12).',
           mic_title: 'Microphone',
           ice_checking: 'Checking connection...',
           ice_connected: 'Channel established',
@@ -212,6 +215,9 @@
           instruction_guest: 'Paste host SDP above and press "Accept Offer".',
           instruction_host: 'Create offer, send it to guest. After receiving answer, paste it and press "Accept Answer".',
           answer_ready: 'Your answer is ready! Click "Send answer to host", copy SDP and send it to the host.',
+          alert_empty_sdp: 'SDP field must not be empty.',
+          alert_invalid_json: 'Text is not valid JSON. Make sure you copied the entire object with curly braces.',
+          alert_missing_type_sdp: 'Object must contain "type" and "sdp" fields. You may have copied the wrong part.',
         }
       };
 
@@ -242,7 +248,6 @@
         document.querySelector('#join-btn').textContent = t('join');
         document.querySelector('#room-input').placeholder = t('room_placeholder');
         document.querySelector('#copy-local-sdp').textContent = t('copy_sdp');
-        // Обновим инструкцию, если она задана
         if (window._instructionKey) setInstruction(window._instructionKey);
         if (window._iceStatusKey) setIceStatus(window._iceStatusKey);
         if (window._statusKey) setStatus(window._statusKey);
@@ -598,6 +603,28 @@
         setInstruction('');
       }
 
+      // Валидация и парсинг SDP
+      function parseRemoteSDP(text) {
+        if (!text) {
+          alert(t('alert_empty_sdp'));
+          return null;
+        }
+        console.log('Входящий SDP (сырой):', text);
+        try {
+          const desc = JSON.parse(text);
+          if (!desc.type || !desc.sdp) {
+            alert(t('alert_missing_type_sdp'));
+            console.error('Отсутствуют поля type или sdp в:', desc);
+            return null;
+          }
+          return desc;
+        } catch (e) {
+          alert(t('alert_invalid_json'));
+          console.error('Ошибка JSON:', e);
+          return null;
+        }
+      }
+
       // ----- Копирование SDP -----
       copyLocalSdpBtn.addEventListener('click', () => {
         const text = localSdpText.value.trim();
@@ -606,7 +633,6 @@
             copyLocalSdpBtn.textContent = '✅ ' + t('sdp_copied');
             setTimeout(() => { copyLocalSdpBtn.textContent = t('copy_sdp'); }, 2000);
           }).catch(() => {
-            // Fallback: выделить и скопировать вручную
             localSdpText.select();
             document.execCommand('copy');
             copyLocalSdpBtn.textContent = '✅ ' + t('sdp_copied');
@@ -642,18 +668,16 @@
 
       acceptOfferBtn.addEventListener('click', async () => {
         isHost = false;
+        const remoteStr = remoteSdpText.value.trim().replace(/^[\s\uFEFF\xA0]+|[\s\uFEFF\xA0]+$/g, '');
+        const remoteDesc = parseRemoteSDP(remoteStr);
+        if (!remoteDesc) return;
+
         closeConnection();
         setupPeerConnection();
         setStatus('status_connecting');
         setInstruction('instruction_guest');
 
-        let remoteStr = remoteSdpText.value.trim();
-        remoteStr = remoteStr.replace(/^[\s\uFEFF\xA0]+|[\s\uFEFF\xA0]+$/g, '');
-
         try {
-          if (!remoteStr) throw new Error('empty');
-          const remoteDesc = JSON.parse(remoteStr);
-          if (!remoteDesc.type || !remoteDesc.sdp) throw new Error('Invalid SDP');
           await pc.setRemoteDescription(new RTCSessionDescription(remoteDesc));
           console.log('Удалённое описание установлено, создаём ответ...');
 
@@ -669,9 +693,8 @@
           });
 
           localSdpText.value = JSON.stringify(pc.localDescription);
-          setStatus('status_waiting_answer'); // фактически ответ готов
+          setStatus('status_waiting_answer');
           setInstruction('answer_ready');
-          // Показываем кнопку "Отправить ответ хосту"
           sendAnswerBtn.style.display = 'block';
           acceptOfferBtn.disabled = true;
         } catch (e) {
@@ -683,7 +706,6 @@
       });
 
       sendAnswerBtn.addEventListener('click', () => {
-        // Копирует SDP ответа в буфер обмена и просит отправить хосту
         const text = localSdpText.value.trim();
         if (text) {
           navigator.clipboard.writeText(text).then(() => {
@@ -694,19 +716,16 @@
             alert(t('sdp_copied') + ' ' + t('host_waiting'));
           });
         }
-        // Оставляем статус для гостя
         setStatus('status_waiting_answer');
         setInstruction('answer_ready');
       });
 
       acceptAnswerBtn.addEventListener('click', async () => {
-        let remoteStr = remoteSdpText.value.trim();
-        remoteStr = remoteStr.replace(/^[\s\uFEFF\xA0]+|[\s\uFEFF\xA0]+$/g, '');
+        const remoteStr = remoteSdpText.value.trim().replace(/^[\s\uFEFF\xA0]+|[\s\uFEFF\xA0]+$/g, '');
+        const remoteDesc = parseRemoteSDP(remoteStr);
+        if (!remoteDesc) return;
 
         try {
-          if (!remoteStr) throw new Error('empty');
-          const remoteDesc = JSON.parse(remoteStr);
-          if (!remoteDesc.type || !remoteDesc.sdp) throw new Error('Invalid SDP');
           await pc.setRemoteDescription(new RTCSessionDescription(remoteDesc));
           console.log('Ответ установлен, ждём ICE-соединения...');
           acceptAnswerBtn.disabled = true;
