@@ -166,7 +166,7 @@
           status_connected: 'Соперник подключился!',
           status_disconnected: 'Соперник отключился',
           alert_camera: 'Не удалось запустить камеру/микрофон. Проверьте разрешения и HTTPS.',
-          alert_bad_sdp: 'Ошибка: неверный формат SDP. Убедитесь, что вы скопировали текст полностью, включая фигурные скобки. Подробности в консоли (F12).',
+          alert_bad_sdp: 'Ошибка: неверный формат SDP. Убедитесь, что вы скопировали текст полностью, включая фигурные скобки.',
           mic_title: 'Микрофон',
           ice_checking: 'Проверка соединения...',
           ice_connected: 'Канал установлен',
@@ -203,7 +203,7 @@
           status_connected: 'Opponent connected!',
           status_disconnected: 'Opponent disconnected',
           alert_camera: 'Could not access camera/mic. Check permissions and HTTPS.',
-          alert_bad_sdp: 'Error: invalid SDP format. Make sure you copied the full text including curly braces. Details in console (F12).',
+          alert_bad_sdp: 'Error: invalid SDP format. Make sure you copied the full text including curly braces.',
           mic_title: 'Microphone',
           ice_checking: 'Checking connection...',
           ice_connected: 'Channel established',
@@ -499,7 +499,7 @@
       });
 
       // ---------- WebRTC ----------
-      function setupPeerConnection() {
+      function createPeerConnection() {
         if (pc) {
           pc.close();
           pc = null;
@@ -509,10 +509,10 @@
           dc = null;
         }
 
-        pc = new RTCPeerConnection(rtcConfig);
-        console.log('PeerConnection создан, ICE серверы:', rtcConfig.iceServers);
+        const newPc = new RTCPeerConnection(rtcConfig);
+        console.log('PeerConnection создан');
 
-        pc.ontrack = (event) => {
+        newPc.ontrack = (event) => {
           console.log('Получен удалённый трек');
           if (event.streams && event.streams[0]) {
             remoteVideo.srcObject = event.streams[0];
@@ -520,8 +520,8 @@
           }
         };
 
-        pc.oniceconnectionstatechange = () => {
-          const state = pc.iceConnectionState;
+        newPc.oniceconnectionstatechange = () => {
+          const state = newPc.iceConnectionState;
           console.log('ICE состояние:', state);
           if (state === 'checking') {
             setIceStatus('ice_checking');
@@ -536,25 +536,27 @@
         };
 
         if (isHost) {
-          dc = pc.createDataChannel('game');
-          setupDataChannel(dc);
+          const newDc = newPc.createDataChannel('game');
+          setupDataChannel(newDc, newPc);
         } else {
-          pc.ondatachannel = (event) => {
+          newPc.ondatachannel = (event) => {
             console.log('Получен DataChannel');
-            dc = event.channel;
-            setupDataChannel(dc);
+            setupDataChannel(event.channel, newPc);
           };
         }
 
         if (localStream) {
           localStream.getTracks().forEach(track => {
             console.log('Добавлен трек:', track.kind);
-            pc.addTrack(track, localStream);
+            newPc.addTrack(track, localStream);
           });
         }
+
+        pc = newPc; // обновляем глобальную переменную
+        return newPc;
       }
 
-      function setupDataChannel(channel) {
+      function setupDataChannel(channel, currentPc) {
         console.log('Настройка DataChannel');
         channel.onopen = () => {
           console.log('DataChannel открыт');
@@ -589,21 +591,23 @@
           setStatus('status_disconnected');
         };
         channel.onerror = (err) => console.error('Ошибка DataChannel:', err);
+        dc = channel; // обновляем глобальную переменную
       }
 
-      async function closeConnection() {
+      function closeConnection() {
         if (dc) { dc.close(); dc = null; }
         if (pc) { pc.close(); pc = null; }
         remoteVideo.srcObject = null;
         remotePaddleY = 0;
         localSdpText.value = '';
+        acceptOfferBtn.disabled = false;
         acceptAnswerBtn.disabled = true;
         sendAnswerBtn.style.display = 'none';
         setIceStatus('');
         setInstruction('');
       }
 
-      // Валидация и парсинг SDP
+      // Валидация SDP
       function parseRemoteSDP(text) {
         if (!text) {
           alert(t('alert_empty_sdp'));
@@ -643,65 +647,80 @@
 
       // ----- Сигнализация -----
       createOfferBtn.addEventListener('click', async () => {
+        createOfferBtn.disabled = true;
         isHost = true;
         closeConnection();
-        setupPeerConnection();
+        const currentPc = createPeerConnection();
         setStatus('status_gathering');
         setInstruction('');
 
-        const offer = await pc.createOffer();
-        await pc.setLocalDescription(offer);
-        console.log('Ожидание сбора ICE...');
-        await new Promise(resolve => {
-          if (pc.iceGatheringState === 'complete') resolve();
-          else pc.onicegatheringstatechange = () => {
-            if (pc.iceGatheringState === 'complete') resolve();
-          };
-        });
+        try {
+          const offer = await currentPc.createOffer();
+          await currentPc.setLocalDescription(offer);
+          console.log('Ожидание сбора ICE...');
+          await new Promise(resolve => {
+            if (currentPc.iceGatheringState === 'complete') resolve();
+            else currentPc.onicegatheringstatechange = () => {
+              if (currentPc.iceGatheringState === 'complete') resolve();
+            };
+          });
 
-        localSdpText.value = JSON.stringify(pc.localDescription);
-        setStatus('status_offer_ready');
-        setInstruction('instruction_host');
-        acceptAnswerBtn.disabled = false;
-        sendAnswerBtn.style.display = 'none';
+          localSdpText.value = JSON.stringify(currentPc.localDescription);
+          setStatus('status_offer_ready');
+          setInstruction('instruction_host');
+          acceptAnswerBtn.disabled = false;
+          sendAnswerBtn.style.display = 'none';
+        } catch (e) {
+          console.error('Ошибка создания предложения:', e);
+          alert(t('alert_bad_sdp'));
+          closeConnection();
+          setStatus('status_waiting');
+        } finally {
+          createOfferBtn.disabled = false;
+        }
       });
 
       acceptOfferBtn.addEventListener('click', async () => {
-        isHost = false;
+        acceptOfferBtn.disabled = true;
         const remoteStr = remoteSdpText.value.trim().replace(/^[\s\uFEFF\xA0]+|[\s\uFEFF\xA0]+$/g, '');
         const remoteDesc = parseRemoteSDP(remoteStr);
-        if (!remoteDesc) return;
+        if (!remoteDesc) {
+          acceptOfferBtn.disabled = false;
+          return;
+        }
 
+        isHost = false;
         closeConnection();
-        setupPeerConnection();
+        const currentPc = createPeerConnection();
         setStatus('status_connecting');
         setInstruction('instruction_guest');
 
         try {
-          await pc.setRemoteDescription(new RTCSessionDescription(remoteDesc));
+          await currentPc.setRemoteDescription(new RTCSessionDescription(remoteDesc));
           console.log('Удалённое описание установлено, создаём ответ...');
 
           setStatus('status_gathering');
-          const answer = await pc.createAnswer();
-          await pc.setLocalDescription(answer);
+          const answer = await currentPc.createAnswer();
+          await currentPc.setLocalDescription(answer);
 
           await new Promise(resolve => {
-            if (pc.iceGatheringState === 'complete') resolve();
-            else pc.onicegatheringstatechange = () => {
-              if (pc.iceGatheringState === 'complete') resolve();
+            if (currentPc.iceGatheringState === 'complete') resolve();
+            else currentPc.onicegatheringstatechange = () => {
+              if (currentPc.iceGatheringState === 'complete') resolve();
             };
           });
 
-          localSdpText.value = JSON.stringify(pc.localDescription);
+          localSdpText.value = JSON.stringify(currentPc.localDescription);
           setStatus('status_waiting_answer');
           setInstruction('answer_ready');
           sendAnswerBtn.style.display = 'block';
-          acceptOfferBtn.disabled = true;
+          // acceptOfferBtn остаётся disabled
         } catch (e) {
           console.error('Ошибка принятия предложения:', e);
           alert(t('alert_bad_sdp'));
-          setStatus('status_waiting');
           closeConnection();
+          setStatus('status_waiting');
+          acceptOfferBtn.disabled = false;
         }
       });
 
@@ -721,26 +740,40 @@
       });
 
       acceptAnswerBtn.addEventListener('click', async () => {
+        acceptAnswerBtn.disabled = true;
         const remoteStr = remoteSdpText.value.trim().replace(/^[\s\uFEFF\xA0]+|[\s\uFEFF\xA0]+$/g, '');
         const remoteDesc = parseRemoteSDP(remoteStr);
-        if (!remoteDesc) return;
+        if (!remoteDesc) {
+          acceptAnswerBtn.disabled = false;
+          return;
+        }
+
+        const currentPc = pc; // используем текущий pc хоста
+        if (!currentPc) {
+          alert('Нет активного соединения. Создайте предложение заново.');
+          acceptAnswerBtn.disabled = false;
+          return;
+        }
 
         try {
-          await pc.setRemoteDescription(new RTCSessionDescription(remoteDesc));
+          await currentPc.setRemoteDescription(new RTCSessionDescription(remoteDesc));
           console.log('Ответ установлен, ждём ICE-соединения...');
-          acceptAnswerBtn.disabled = true;
           setStatus('status_connecting');
           setInstruction('');
         } catch (e) {
           console.error('Ошибка принятия ответа:', e);
           alert(t('alert_bad_sdp'));
           closeConnection();
+          acceptAnswerBtn.disabled = false;
+          setStatus('status_waiting');
         }
       });
 
       closeConnectionBtn.addEventListener('click', () => {
         closeConnection();
         setStatus('status_waiting');
+        acceptOfferBtn.disabled = false;
+        createOfferBtn.disabled = false;
       });
 
       // ----- Комната и ссылки -----
