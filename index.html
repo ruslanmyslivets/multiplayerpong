@@ -92,6 +92,7 @@
     #room-input { padding: 3px 6px; font-size: 13px; width: 120px; border-radius: 4px; border: 1px solid #888; background: #333; color: white; }
     #join-btn { background: #444; color: white; border: 1px solid white; padding: 4px 10px; border-radius: 4px; cursor: pointer; font-size: 12px; }
     .instruction { font-size: 11px; color: #ccc; margin-top: 2px; }
+    .warning { color: #ff8; font-size: 11px; }
   </style>
 </head>
 <body>
@@ -131,6 +132,7 @@
       <button id="accept-answer-btn" disabled>Принять ответ (хост)</button>
       <button id="close-connection-btn">Закрыть соединение</button>
       <div id="instruction" class="instruction"></div>
+      <div id="sdp-warning" class="warning"></div>
     </div>
     <button id="lang-switch">🌐</button>
   </div>
@@ -166,7 +168,7 @@
           status_connected: 'Соперник подключился!',
           status_disconnected: 'Соперник отключился',
           alert_camera: 'Не удалось запустить камеру/микрофон. Проверьте разрешения и HTTPS.',
-          alert_bad_sdp: 'Ошибка: неверный формат SDP. Убедитесь, что вы скопировали текст полностью, включая фигурные скобки.',
+          alert_bad_sdp: 'Ошибка: неверный формат SDP. Подробности в консоли (F12).',
           mic_title: 'Микрофон',
           ice_checking: 'Проверка соединения...',
           ice_connected: 'Канал установлен',
@@ -175,12 +177,14 @@
           host_waiting: 'Отправьте SDP гостю',
           copy_sdp: '📋 Копировать',
           sdp_copied: 'SDP скопирован!',
-          instruction_guest: 'Вставьте SDP хоста выше и нажмите "Принять предложение".',
+          instruction_guest: 'Вставьте SDP хоста (offer) выше и нажмите "Принять предложение".',
           instruction_host: 'Создайте предложение, отправьте его гостю. После получения ответа вставьте его и нажмите "Принять ответ".',
           answer_ready: 'Ваш ответ готов! Нажмите "Отправить ответ хосту", скопируйте SDP и передайте его хосту.',
           alert_empty_sdp: 'Поле SDP не должно быть пустым.',
-          alert_invalid_json: 'Текст не является корректным JSON. Проверьте, что скопировали весь объект с фигурными скобками.',
-          alert_missing_type_sdp: 'Объект должен содержать поля "type" и "sdp". Возможно, вы скопировали не тот фрагмент.',
+          alert_invalid_json: 'Текст не является корректным JSON.',
+          alert_missing_type_sdp: 'Объект должен содержать поля "type" и "sdp".',
+          alert_wrong_type_guest: 'Ожидался offer, но получен SDP типа "{type}". Убедитесь, что вы вставили предложение от хоста.',
+          alert_wrong_type_host: 'Ожидался answer, но получен SDP типа "{type}". Убедитесь, что вы вставили ответ от гостя.'
         },
         en: {
           room_prefix: 'Room ID:',
@@ -203,7 +207,7 @@
           status_connected: 'Opponent connected!',
           status_disconnected: 'Opponent disconnected',
           alert_camera: 'Could not access camera/mic. Check permissions and HTTPS.',
-          alert_bad_sdp: 'Error: invalid SDP format. Make sure you copied the full text including curly braces.',
+          alert_bad_sdp: 'Error: invalid SDP format. Details in console (F12).',
           mic_title: 'Microphone',
           ice_checking: 'Checking connection...',
           ice_connected: 'Channel established',
@@ -212,12 +216,14 @@
           host_waiting: 'Send SDP to guest',
           copy_sdp: '📋 Copy',
           sdp_copied: 'SDP copied!',
-          instruction_guest: 'Paste host SDP above and press "Accept Offer".',
+          instruction_guest: 'Paste host SDP (offer) above and press "Accept Offer".',
           instruction_host: 'Create offer, send it to guest. After receiving answer, paste it and press "Accept Answer".',
           answer_ready: 'Your answer is ready! Click "Send answer to host", copy SDP and send it to the host.',
           alert_empty_sdp: 'SDP field must not be empty.',
-          alert_invalid_json: 'Text is not valid JSON. Make sure you copied the entire object with curly braces.',
-          alert_missing_type_sdp: 'Object must contain "type" and "sdp" fields. You may have copied the wrong part.',
+          alert_invalid_json: 'Text is not valid JSON.',
+          alert_missing_type_sdp: 'Object must contain "type" and "sdp" fields.',
+          alert_wrong_type_guest: 'Expected offer, but received SDP of type "{type}". Make sure you pasted the offer from the host.',
+          alert_wrong_type_host: 'Expected answer, but received SDP of type "{type}". Make sure you pasted the answer from the guest.'
         }
       };
 
@@ -227,7 +233,7 @@
         if (saved === 'ru' || saved === 'en') return saved;
         return navigator.language.startsWith('ru') ? 'ru' : 'en';
       }
-      function t(key) { return translations[currentLang][key] || key; }
+      function t(key, params) { let str = translations[currentLang][key] || key; if (params) Object.entries(params).forEach(([k,v]) => str = str.replace(`{${k}}`, v)); return str; }
       function setLanguage(lang) {
         currentLang = lang;
         localStorage.setItem('pong-lang', lang);
@@ -270,6 +276,10 @@
       function setInstruction(key) {
         window._instructionKey = key;
         document.getElementById('instruction').textContent = t(key);
+      }
+      function showSdpWarning(msg) {
+        document.getElementById('sdp-warning').textContent = msg;
+        setTimeout(() => { document.getElementById('sdp-warning').textContent = ''; }, 5000);
       }
 
       // ---------- DOM ----------
@@ -537,11 +547,11 @@
 
         if (isHost) {
           const newDc = newPc.createDataChannel('game');
-          setupDataChannel(newDc, newPc);
+          setupDataChannel(newDc);
         } else {
           newPc.ondatachannel = (event) => {
             console.log('Получен DataChannel');
-            setupDataChannel(event.channel, newPc);
+            setupDataChannel(event.channel);
           };
         }
 
@@ -552,11 +562,11 @@
           });
         }
 
-        pc = newPc; // обновляем глобальную переменную
+        pc = newPc;
         return newPc;
       }
 
-      function setupDataChannel(channel, currentPc) {
+      function setupDataChannel(channel) {
         console.log('Настройка DataChannel');
         channel.onopen = () => {
           console.log('DataChannel открыт');
@@ -591,7 +601,7 @@
           setStatus('status_disconnected');
         };
         channel.onerror = (err) => console.error('Ошибка DataChannel:', err);
-        dc = channel; // обновляем глобальную переменную
+        dc = channel;
       }
 
       function closeConnection() {
@@ -605,6 +615,7 @@
         sendAnswerBtn.style.display = 'none';
         setIceStatus('');
         setInstruction('');
+        document.getElementById('sdp-warning').textContent = '';
       }
 
       // Валидация SDP
@@ -613,7 +624,6 @@
           alert(t('alert_empty_sdp'));
           return null;
         }
-        console.log('Входящий SDP (сырой):', text);
         try {
           const desc = JSON.parse(text);
           if (!desc.type || !desc.sdp) {
@@ -688,6 +698,11 @@
           acceptOfferBtn.disabled = false;
           return;
         }
+        if (remoteDesc.type !== 'offer') {
+          showSdpWarning(t('alert_wrong_type_guest', { type: remoteDesc.type }));
+          acceptOfferBtn.disabled = false;
+          return;
+        }
 
         isHost = false;
         closeConnection();
@@ -714,7 +729,6 @@
           setStatus('status_waiting_answer');
           setInstruction('answer_ready');
           sendAnswerBtn.style.display = 'block';
-          // acceptOfferBtn остаётся disabled
         } catch (e) {
           console.error('Ошибка принятия предложения:', e);
           alert(t('alert_bad_sdp'));
@@ -747,8 +761,13 @@
           acceptAnswerBtn.disabled = false;
           return;
         }
+        if (remoteDesc.type !== 'answer') {
+          showSdpWarning(t('alert_wrong_type_host', { type: remoteDesc.type }));
+          acceptAnswerBtn.disabled = false;
+          return;
+        }
 
-        const currentPc = pc; // используем текущий pc хоста
+        const currentPc = pc;
         if (!currentPc) {
           alert('Нет активного соединения. Создайте предложение заново.');
           acceptAnswerBtn.disabled = false;
