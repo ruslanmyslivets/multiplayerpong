@@ -75,7 +75,7 @@
     <button id="lang-switch">🌐</button>
   </div>
 
-  <!-- TensorFlow.js + Handpose (надёжное распознавание пальцев) -->
+  <!-- TensorFlow.js + Handpose (без SIMD) -->
   <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs-core@3.18.0/dist/tf-core.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs-converter@3.18.0/dist/tf-converter.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs-backend-webgl@3.18.0/dist/tf-backend-webgl.min.js"></script>
@@ -83,6 +83,7 @@
 
   <script>
     (function() {
+      // ---------- Переводы ----------
       const translations = {
         ru: {
           room_prefix: 'ID комнаты:',
@@ -340,7 +341,7 @@
         requestAnimationFrame(loop);
       }
 
-      // Инициализация Handpose
+      // ---------- Handpose (надёжное распознавание пальцев) ----------
       async function initHandpose() {
         const model = await handpose.load();
         console.log('Handpose model loaded');
@@ -350,15 +351,13 @@
               const predictions = await model.estimateHands(videoEl);
               if (predictions.length > 0) {
                 const keypoints = predictions[0].landmarks;
-                // Индексы: 4 – большой палец, 8 – указательный
                 const thumb = keypoints[4];
                 const index = keypoints[8];
                 if (thumb && index) {
-                  // Средняя точка между большим и указательным
                   const midY = (thumb[1] + index[1]) / 2;
                   handY = midY / videoEl.videoHeight;
                   hand = true;
-                  console.log('hand detected Y:', handY.toFixed(2));
+                  console.log('hand Y:', handY.toFixed(2));
                 } else {
                   hand = false;
                 }
@@ -366,9 +365,7 @@
                 hand = false;
               }
             }
-          } catch (e) {
-            // игнорируем ошибки
-          }
+          } catch (e) {}
           requestAnimationFrame(detect);
         }
         detect();
@@ -379,7 +376,7 @@
         videoEl.srcObject = localStream;
         videoEl.muted = true;
         updateMic();
-        initHandpose(); // запуск распознавания рук
+        initHandpose(); // запускаем распознавание рук
       }
 
       function updateMic() {
