@@ -5,7 +5,7 @@ RU:Это переосмысленная версия классического
 ## Как играть / How to Play
 
 ### 🇷🇺 Русский
-1. **Откройте игру** по ссылке: `https://ваш-логин.github.io/pong-game/`
+1. **Откройте игру** по ссылке: `https://ruslanmyslivets.github.io/multiplayerpong/`
 2. Разрешите браузеру доступ к **камере** и **микрофону**.
 3. На экране слева — ваша камера, справа — поле игры и видео собеседника.
 4. Управляйте левой ракеткой, сводя и разводя **большой и указательный пальцы** перед камерой.
@@ -15,7 +15,7 @@ RU:Это переосмысленная версия классического
    - Или введите ID комнаты вручную в поле «ID комнаты» и нажмите «Подключиться».
 
 ### 🇬🇧 English
-1. **Open the game** at: `https://your-username.github.io/pong-game/`
+1. **Open the game** at: `https://ruslanmyslivets.github.io/multiplayerpong/`
 2. Allow browser access to **camera** and **microphone**.
 3. Left half — your camera, right half — game field and opponent's video.
 4. Move your **thumb and index finger** to control the left paddle.
