@@ -76,7 +76,6 @@
     <button id="lang-switch">🌐</button>
   </div>
 
-  <!-- MediaPipe Hands -->
   <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
   <script src="https://cdn.jsdelivr.net/npm/@mediapipe/control_utils/control_utils.js" crossorigin="anonymous"></script>
   <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js" crossorigin="anonymous"></script>
@@ -84,7 +83,6 @@
 
   <script>
     (function() {
-      // ---------- Переводы ----------
       const translations = {
         ru: {
           room_prefix: 'ID комнаты:',
@@ -106,8 +104,8 @@
           status_connecting: 'Установка соединения...',
           status_connected: 'Соперник подключился!',
           status_disconnected: 'Соперник отключился',
-          alert_camera: 'Не удалось запустить камеру/микрофон. Проверьте разрешения и HTTPS.',
-          alert_bad_sdp: 'Ошибка: неверный формат SDP. Подробности в консоли (F12).',
+          alert_camera: 'Не удалось запустить камеру/микрофон. Проверьте HTTPS.',
+          alert_bad_sdp: 'Ошибка SDP. Подробности в консоли (F12).',
           mic_title: 'Микрофон',
           ice_checking: 'Проверка соединения...',
           ice_connected: 'Канал установлен',
@@ -116,14 +114,14 @@
           host_waiting: 'Отправьте SDP гостю',
           copy_sdp: '📋 Копировать',
           sdp_copied: 'SDP скопирован!',
-          instruction_guest: 'Вставьте SDP хоста (offer) выше и нажмите "Принять предложение".',
-          instruction_host: 'Создайте предложение, отправьте его гостю. После получения ответа вставьте его и нажмите "Принять ответ".',
-          answer_ready: 'Ваш ответ готов! Нажмите "Отправить ответ хосту", скопируйте SDP и передайте его хосту.',
-          alert_empty_sdp: 'Поле SDP не должно быть пустым.',
-          alert_invalid_json: 'Текст не является корректным JSON.',
-          alert_missing_type_sdp: 'Объект должен содержать поля "type" и "sdp".',
-          alert_wrong_type_guest: 'Ожидался offer, но получен SDP типа "{type}". Убедитесь, что вы вставили предложение от хоста.',
-          alert_wrong_type_host: 'Ожидался answer, но получен SDP типа "{type}". Убедитесь, что вы вставили ответ от гостя.'
+          instruction_guest: 'Вставьте SDP хоста (offer) и нажмите «Принять предложение».',
+          instruction_host: 'Создайте предложение, отправьте гостю. Получив ответ, вставьте и нажмите «Принять ответ».',
+          answer_ready: 'Ваш ответ готов! Нажмите «Отправить ответ хосту», скопируйте SDP и передайте хосту.',
+          alert_empty_sdp: 'Поле SDP пустое.',
+          alert_invalid_json: 'Текст не является JSON.',
+          alert_missing_type_sdp: 'Нужны поля type и sdp.',
+          alert_wrong_type_guest: 'Ожидался offer, получен {type}.',
+          alert_wrong_type_host: 'Ожидался answer, получен {type}.'
         },
         en: {
           room_prefix: 'Room ID:',
@@ -145,618 +143,431 @@
           status_connecting: 'Establishing connection...',
           status_connected: 'Opponent connected!',
           status_disconnected: 'Opponent disconnected',
-          alert_camera: 'Could not access camera/mic. Check permissions and HTTPS.',
-          alert_bad_sdp: 'Error: invalid SDP format. Details in console (F12).',
+          alert_camera: 'Could not access camera/mic. Check HTTPS.',
+          alert_bad_sdp: 'SDP error. See console (F12).',
           mic_title: 'Microphone',
           ice_checking: 'Checking connection...',
           ice_connected: 'Channel established',
-          ice_disconnected: 'Channel disconnected',
+          ice_disconnected: 'Channel broken',
           link_copied: 'Link copied!',
           host_waiting: 'Send SDP to guest',
           copy_sdp: '📋 Copy',
           sdp_copied: 'SDP copied!',
-          instruction_guest: 'Paste host SDP (offer) above and press "Accept Offer".',
-          instruction_host: 'Create offer, send it to guest. After receiving answer, paste it and press "Accept Answer".',
-          answer_ready: 'Your answer is ready! Click "Send answer to host", copy SDP and send it to the host.',
-          alert_empty_sdp: 'SDP field must not be empty.',
+          instruction_guest: 'Paste host SDP (offer) and press "Accept Offer".',
+          instruction_host: 'Create offer, send to guest. Paste answer and press "Accept Answer".',
+          answer_ready: 'Answer ready! Click "Send answer to host", copy SDP and send it.',
+          alert_empty_sdp: 'SDP field is empty.',
           alert_invalid_json: 'Text is not valid JSON.',
-          alert_missing_type_sdp: 'Object must contain "type" and "sdp" fields.',
-          alert_wrong_type_guest: 'Expected offer, but received SDP of type "{type}". Make sure you pasted the offer from the host.',
-          alert_wrong_type_host: 'Expected answer, but received SDP of type "{type}". Make sure you pasted the answer from the guest.'
+          alert_missing_type_sdp: 'Object must have type and sdp.',
+          alert_wrong_type_guest: 'Expected offer, got {type}.',
+          alert_wrong_type_host: 'Expected answer, got {type}.'
         }
       };
 
       let currentLang = 'ru';
-      function detectLanguage() {
+      function t(key, params) { let s = translations[currentLang][key] || key; if (params) Object.entries(params).forEach(([k,v]) => s = s.replace(`{${k}}`, v)); return s; }
+      function detectLang() {
         const saved = localStorage.getItem('pong-lang');
-        if (saved === 'ru' || saved === 'en') return saved;
-        return navigator.language.startsWith('ru') ? 'ru' : 'en';
+        return (saved === 'ru' || saved === 'en') ? saved : (navigator.language.startsWith('ru') ? 'ru' : 'en');
       }
-      function t(key, params) { let str = translations[currentLang][key] || key; if (params) Object.entries(params).forEach(([k,v]) => str = str.replace(`{${k}}`, v)); return str; }
-      function setLanguage(lang) {
+      function setLang(lang) {
         currentLang = lang;
         localStorage.setItem('pong-lang', lang);
         applyTranslations();
-        updateLangSwitchButton();
+        document.getElementById('lang-switch').textContent = lang === 'ru' ? '🇷🇺' : '🇬🇧';
       }
       function applyTranslations() {
-        document.querySelector('#sig-title').textContent = t('signaling_title');
-        document.querySelector('#local-sdp').placeholder = t('local_sdp_placeholder');
-        document.querySelector('#remote-sdp').placeholder = t('remote_sdp_placeholder');
-        document.querySelector('#create-offer-btn').textContent = t('create_offer');
-        document.querySelector('#accept-offer-btn').textContent = t('accept_offer');
-        document.querySelector('#accept-answer-btn').textContent = t('accept_answer');
-        document.querySelector('#send-answer-btn').textContent = t('send_answer');
-        document.querySelector('#disconnect-btn').textContent = '🔌 ' + t('close_connection');
-        document.querySelector('#mic-status').title = t('mic_title');
-        document.querySelector('#copy-link-btn').textContent = t('copy_link');
-        document.querySelector('#join-btn').textContent = t('join');
-        document.querySelector('#room-input').placeholder = t('room_placeholder');
-        document.querySelector('#copy-local-sdp').textContent = t('copy_sdp');
-        if (window._instructionKey) setInstruction(window._instructionKey);
-        if (window._iceStatusKey) setIceStatus(window._iceStatusKey);
-        if (window._statusKey) setStatus(window._statusKey);
+        document.getElementById('sig-title').textContent = t('signaling_title');
+        document.getElementById('local-sdp').placeholder = t('local_sdp_placeholder');
+        document.getElementById('remote-sdp').placeholder = t('remote_sdp_placeholder');
+        document.getElementById('create-offer-btn').textContent = t('create_offer');
+        document.getElementById('accept-offer-btn').textContent = t('accept_offer');
+        document.getElementById('accept-answer-btn').textContent = t('accept_answer');
+        document.getElementById('send-answer-btn').textContent = t('send_answer');
+        document.getElementById('disconnect-btn').textContent = '🔌 ' + t('close_connection');
+        document.getElementById('mic-status').title = t('mic_title');
+        document.getElementById('copy-link-btn').textContent = t('copy_link');
+        document.getElementById('join-btn').textContent = t('join');
+        document.getElementById('room-input').placeholder = t('room_placeholder');
+        document.getElementById('copy-local-sdp').textContent = t('copy_sdp');
+        if (window._status) setStatus(window._status);
+        if (window._ice) setIce(window._ice);
+        if (window._instr) setInstr(window._instr);
       }
-      function updateLangSwitchButton() {
-        document.getElementById('lang-switch').textContent = currentLang === 'ru' ? '🇷🇺' : '🇬🇧';
-      }
-      document.getElementById('lang-switch').addEventListener('click', () => {
-        setLanguage(currentLang === 'ru' ? 'en' : 'ru');
-      });
+      document.getElementById('lang-switch').addEventListener('click', () => setLang(currentLang === 'ru' ? 'en' : 'ru'));
 
-      function setStatus(key) { window._statusKey = key; document.getElementById('status-text').textContent = t(key); }
-      function setIceStatus(key) { window._iceStatusKey = key; document.getElementById('ice-status').textContent = t(key); }
-      function setInstruction(key) { window._instructionKey = key; document.getElementById('instruction').textContent = t(key); }
-      function showSdpWarning(msg) { document.getElementById('sdp-warning').textContent = msg; setTimeout(() => { document.getElementById('sdp-warning').textContent = ''; }, 5000); }
+      function setStatus(k) { window._status = k; document.getElementById('status-text').textContent = t(k); }
+      function setIce(k) { window._ice = k; document.getElementById('ice-status').textContent = t(k); }
+      function setInstr(k) { window._instr = k; document.getElementById('instruction').textContent = t(k); }
+      function warn(msg) { const w = document.getElementById('sdp-warning'); w.textContent = msg; setTimeout(() => w.textContent = '', 5000); }
 
-      // ---------- DOM ----------
-      const inputVideo = document.getElementById('input-video');
+      const videoEl = document.getElementById('input-video');
       const canvas = document.getElementById('game-canvas');
       const ctx = canvas.getContext('2d');
       const remoteVideo = document.getElementById('remote-video');
-      const scoreCenter = document.getElementById('score-center');
-      const roomIdDisplay = document.getElementById('room-id-display');
+      const scoreDiv = document.getElementById('score-center');
+      const roomSpan = document.getElementById('room-id-display');
       const copyLinkBtn = document.getElementById('copy-link-btn');
-      const guestJoinForm = document.getElementById('guest-join-form');
+      const joinForm = document.getElementById('guest-join-form');
       const roomInput = document.getElementById('room-input');
       const joinBtn = document.getElementById('join-btn');
-      const micStatus = document.getElementById('mic-status');
-      const signalingPanel = document.getElementById('signaling-panel');
-      const localSdpText = document.getElementById('local-sdp');
-      const remoteSdpText = document.getElementById('remote-sdp');
-      const copyLocalSdpBtn = document.getElementById('copy-local-sdp');
-      const createOfferBtn = document.getElementById('create-offer-btn');
-      const acceptOfferBtn = document.getElementById('accept-offer-btn');
-      const sendAnswerBtn = document.getElementById('send-answer-btn');
-      const acceptAnswerBtn = document.getElementById('accept-answer-btn');
+      const micBtn = document.getElementById('mic-status');
+      const sigPanel = document.getElementById('signaling-panel');
+      const localSdp = document.getElementById('local-sdp');
+      const remoteSdp = document.getElementById('remote-sdp');
+      const copySdpBtn = document.getElementById('copy-local-sdp');
+      const createOffer = document.getElementById('create-offer-btn');
+      const acceptOffer = document.getElementById('accept-offer-btn');
+      const sendAnswer = document.getElementById('send-answer-btn');
+      const acceptAnswer = document.getElementById('accept-answer-btn');
       const disconnectBtn = document.getElementById('disconnect-btn');
 
-      // ---------- Игра ----------
-      let canvasWidth, canvasHeight;
-      const paddleWidth = 12, paddleHeight = 80;
-      const playerPaddle = { x: 20, y: 0 };
-      const aiPaddle = { x: 0, y: 0 };
-      const ball = { x: 0, y: 0, radius: 8, vx: 0, vy: 0, speed: 5 };
-      let scorePlayer = 0, scoreAI = 0;
-      let targetHandY = 0.5;
-      let handDetected = false;
-      let gameRunning = false;
+      let cw, ch;
+      const PW = 12, PH = 80;
+      const player = { x: 20, y: 0 };
+      const opponent = { x: 0, y: 0 };
+      const ball = { x: 0, y: 0, r: 8, vx: 0, vy: 0, speed: 5 };
+      let scoreP = 0, scoreO = 0;
+      let handY = 0.5, hand = false, running = false;
 
-      // WebRTC
-      let pc = null;
-      let dc = null;
-      let isHost = false;
-      let remotePaddleY = 0;
-      let localStream;
-      let currentRoomId = '';
-
-      const rtcConfig = {
+      let pc = null, dc = null, isHost = false, remoteY = 0, localStream, roomId = '';
+      const rtcCfg = {
         iceServers: [
           { urls: 'stun:stun.l.google.com:19302' },
           { urls: 'turn:openrelay.metered.ca:80', username: 'openrelayproject', credential: 'openrelayproject' }
         ]
       };
+      const urlRoom = new URLSearchParams(location.search).get('room');
 
-      const urlParams = new URLSearchParams(window.location.search);
-      const roomFromUrl = urlParams.get('room');
-
-      function resizeCanvas() {
-        const gamePanel = document.getElementById('game-panel');
-        canvasWidth = gamePanel.clientWidth;
-        canvasHeight = gamePanel.clientHeight;
-        canvas.width = canvasWidth;
-        canvas.height = canvasHeight;
-        playerPaddle.x = 20;
-        aiPaddle.x = canvasWidth - paddleWidth - 20;
-        playerPaddle.y = (canvasHeight - paddleHeight) / 2;
-        aiPaddle.y = (canvasHeight - paddleHeight) / 2;
+      function resize() {
+        const gp = document.getElementById('game-panel');
+        cw = gp.clientWidth; ch = gp.clientHeight;
+        canvas.width = cw; canvas.height = ch;
+        player.x = 20;
+        opponent.x = cw - PW - 20;
+        player.y = (ch - PH) / 2;
+        opponent.y = (ch - PH) / 2;
         resetBall();
       }
-
       function resetBall() {
-        ball.x = canvasWidth / 2;
-        ball.y = canvasHeight / 2;
-        const angle = (Math.random() * 0.5 + 0.25) * Math.PI;
-        const dir = Math.random() < 0.5 ? 1 : -1;
-        ball.vx = ball.speed * Math.cos(angle) * dir;
-        ball.vy = ball.speed * Math.sin(angle) * (Math.random() < 0.5 ? 1 : -1);
+        ball.x = cw / 2; ball.y = ch / 2;
+        const a = (Math.random() * 0.5 + 0.25) * Math.PI;
+        ball.vx = ball.speed * Math.cos(a) * (Math.random() < 0.5 ? 1 : -1);
+        ball.vy = ball.speed * Math.sin(a) * (Math.random() < 0.5 ? 1 : -1);
       }
+      function updateScore() { scoreDiv.textContent = `${scoreP} : ${scoreO}`; }
 
-      function updateScoreDisplay() { scoreCenter.textContent = `${scorePlayer} : ${scoreAI}`; }
+      function loop() {
+        if (!cw || !ch) return requestAnimationFrame(loop);
 
-      function gameLoop() {
-        if (!canvasWidth || !canvasHeight) {
-          requestAnimationFrame(gameLoop);
-          return;
-        }
+        if (hand) {
+          let cy = handY * ch;
+          cy = Math.max(PH/2, Math.min(ch - PH/2, cy));
+          player.y = cy - PH/2;
+          running = true;
+        } else running = false;
 
-        if (handDetected) {
-          let desiredCenterY = targetHandY * canvasHeight;
-          desiredCenterY = Math.max(paddleHeight / 2, Math.min(canvasHeight - paddleHeight / 2, desiredCenterY));
-          playerPaddle.y = desiredCenterY - paddleHeight / 2;
-          if (!gameRunning) gameRunning = true;
-        } else {
-          gameRunning = false;
-        }
-
-        // Обновление соперника
         if (!dc || dc.readyState !== 'open') {
-          if (gameRunning) {
-            const aiCenterY = aiPaddle.y + paddleHeight / 2;
-            if (ball.y < aiCenterY - 5) aiPaddle.y -= 4.5;
-            else if (ball.y > aiCenterY + 5) aiPaddle.y += 4.5;
+          if (running) {
+            const aiCy = opponent.y + PH/2;
+            if (ball.y < aiCy - 5) opponent.y -= 4.5;
+            else if (ball.y > aiCy + 5) opponent.y += 4.5;
           }
-        } else {
-          aiPaddle.y = remotePaddleY;
-        }
-        aiPaddle.y = Math.max(0, Math.min(canvasHeight - paddleHeight, aiPaddle.y));
+        } else opponent.y = remoteY;
+        opponent.y = Math.max(0, Math.min(ch - PH, opponent.y));
 
-        // Отправка своей позиции
-        if (dc && dc.readyState === 'open' && handDetected) {
-          try { dc.send(JSON.stringify({ type: 'paddleUpdate', y: playerPaddle.y })); } catch(e) {}
+        if (dc && dc.readyState === 'open' && hand) {
+          try { dc.send(JSON.stringify({ type: 'paddle', y: player.y })); } catch(e) {}
         }
 
-        // Физика мяча
         if (!dc || dc.readyState !== 'open' || isHost) {
-          if (gameRunning) {
-            ball.x += ball.vx;
-            ball.y += ball.vy;
-
-            if (ball.y - ball.radius <= 0 || ball.y + ball.radius >= canvasHeight) {
-              ball.vy *= -1;
-              ball.y = Math.max(ball.radius, Math.min(canvasHeight - ball.radius, ball.y));
-            }
-
-            if (ball.vx < 0 && ball.x - ball.radius <= playerPaddle.x + paddleWidth &&
-                ball.x - ball.radius >= playerPaddle.x &&
-                ball.y >= playerPaddle.y && ball.y <= playerPaddle.y + paddleHeight) {
-              const hit = (ball.y - playerPaddle.y) / paddleHeight;
-              const angle = (hit - 0.5) * (Math.PI / 3);
-              ball.vx = ball.speed * Math.cos(angle);
-              ball.vy = ball.speed * Math.sin(angle);
+          if (running) {
+            ball.x += ball.vx; ball.y += ball.vy;
+            if (ball.y - ball.r <= 0 || ball.y + ball.r >= ch) { ball.vy *= -1; ball.y = Math.max(ball.r, Math.min(ch - ball.r, ball.y)); }
+            if (ball.vx < 0 && ball.x - ball.r <= player.x + PW && ball.x - ball.r >= player.x && ball.y >= player.y && ball.y <= player.y + PH) {
+              const hit = (ball.y - player.y) / PH;
+              const ang = (hit - 0.5) * (Math.PI/3);
+              ball.vx = ball.speed * Math.cos(ang);
+              ball.vy = ball.speed * Math.sin(ang);
               if (ball.vx < 0) ball.vx *= -1;
               ball.speed = Math.min(ball.speed + 0.2, 12);
             }
-            if (ball.vx > 0 && ball.x + ball.radius >= aiPaddle.x &&
-                ball.x + ball.radius <= aiPaddle.x + paddleWidth &&
-                ball.y >= aiPaddle.y && ball.y <= aiPaddle.y + paddleHeight) {
-              const hit = (ball.y - aiPaddle.y) / paddleHeight;
-              const angle = (hit - 0.5) * (Math.PI / 3);
-              ball.vx = -ball.speed * Math.cos(angle);
-              ball.vy = ball.speed * Math.sin(angle);
+            if (ball.vx > 0 && ball.x + ball.r >= opponent.x && ball.x + ball.r <= opponent.x + PW && ball.y >= opponent.y && ball.y <= opponent.y + PH) {
+              const hit = (ball.y - opponent.y) / PH;
+              const ang = (hit - 0.5) * (Math.PI/3);
+              ball.vx = -ball.speed * Math.cos(ang);
+              ball.vy = ball.speed * Math.sin(ang);
               if (ball.vx > 0) ball.vx *= -1;
               ball.speed = Math.min(ball.speed + 0.2, 12);
             }
-
-            if (ball.x + ball.radius < 0) { scoreAI++; updateScoreDisplay(); resetBall(); }
-            else if (ball.x - ball.radius > canvasWidth) { scorePlayer++; updateScoreDisplay(); resetBall(); }
+            if (ball.x + ball.r < 0) { scoreO++; updateScore(); resetBall(); }
+            else if (ball.x - ball.r > cw) { scoreP++; updateScore(); resetBall(); }
           }
-
           if (dc && dc.readyState === 'open' && isHost) {
             try {
               dc.send(JSON.stringify({
-                type: 'gameState',
+                type: 'state',
                 ball: { x: ball.x, y: ball.y, vx: ball.vx, vy: ball.vy, speed: ball.speed },
-                score: { player: scorePlayer, ai: scoreAI },
+                score: { player: scoreP, opponent: scoreO }
               }));
             } catch(e) {}
           }
         } else {
-          // Гость: ничего не делаем с мячом, он уже обновлён через onmessage
+          // гость: используем координаты, полученные от хоста
         }
 
-        // Отрисовка
-        ctx.clearRect(0, 0, canvasWidth, canvasHeight);
+        ctx.clearRect(0, 0, cw, ch);
         ctx.fillStyle = 'white';
-        ctx.fillRect(playerPaddle.x, playerPaddle.y, paddleWidth, paddleHeight);
-        ctx.fillRect(aiPaddle.x, aiPaddle.y, paddleWidth, paddleHeight);
+        ctx.fillRect(player.x, player.y, PW, PH);
+        ctx.fillRect(opponent.x, opponent.y, PW, PH);
         ctx.beginPath();
-        ctx.arc(ball.x, ball.y, ball.radius, 0, Math.PI*2);
+        ctx.arc(ball.x, ball.y, ball.r, 0, Math.PI*2);
         ctx.fill();
         ctx.closePath();
-
-        requestAnimationFrame(gameLoop);
+        requestAnimationFrame(loop);
       }
 
-      // ---------- MediaPipe ----------
-      function onResults(results) {
-        if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
-          const lm = results.multiHandLandmarks[0];
-          targetHandY = (lm[4].y + lm[8].y) / 2;
-          handDetected = true;
-        } else {
-          handDetected = false;
-        }
+      function onResults(r) {
+        if (r.multiHandLandmarks?.length) {
+          const lm = r.multiHandLandmarks[0];
+          handY = (lm[4].y + lm[8].y) / 2;
+          hand = true;
+        } else hand = false;
       }
 
-      async function initCameraAndMediaPipe() {
-        localStream = await navigator.mediaDevices.getUserMedia({
-          video: { width: { ideal: 640 }, height: { ideal: 480 }, facingMode: 'user' },
-          audio: true
-        });
-        inputVideo.srcObject = localStream;
-        inputVideo.muted = true;
-        updateMicStatus();
-
-        const hands = new Hands({
-          locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`
-        });
-        hands.setOptions({
-          maxNumHands: 1,
-          modelComplexity: 1,
-          minDetectionConfidence: 0.7,
-          minTrackingConfidence: 0.5
-        });
+      async function initCam() {
+        localStream = await navigator.mediaDevices.getUserMedia({ video: { width: 640, height: 480, facingMode: 'user' }, audio: true });
+        videoEl.srcObject = localStream;
+        videoEl.muted = true;
+        updateMic();
+        const hands = new Hands({ locateFile: f => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${f}` });
+        hands.setOptions({ maxNumHands: 1, modelComplexity: 1, minDetectionConfidence: 0.7, minTrackingConfidence: 0.5 });
         hands.onResults(onResults);
-        async function detectLoop() {
-          if (inputVideo.readyState >= 2) await hands.send({ image: inputVideo });
-          requestAnimationFrame(detectLoop);
-        }
-        detectLoop();
+        (function detect() { requestAnimationFrame(detect); if (videoEl.readyState >= 2) hands.send({ image: videoEl }); })();
       }
 
-      function updateMicStatus() {
+      function updateMic() {
         if (!localStream) return;
-        const audioTrack = localStream.getAudioTracks()[0];
-        if (audioTrack && audioTrack.enabled) {
-          micStatus.textContent = '🎤';
-          micStatus.style.color = '#0f0';
-        } else {
-          micStatus.textContent = '🔇';
-          micStatus.style.color = '#ff0';
-        }
+        const t = localStream.getAudioTracks()[0];
+        micBtn.textContent = t?.enabled ? '🎤' : '🔇';
+        micBtn.style.color = t?.enabled ? '#0f0' : '#ff0';
       }
-
-      micStatus.addEventListener('click', () => {
-        if (localStream) {
-          const audioTrack = localStream.getAudioTracks()[0];
-          if (audioTrack) {
-            audioTrack.enabled = !audioTrack.enabled;
-            updateMicStatus();
-          }
-        }
+      micBtn.addEventListener('click', () => {
+        const t = localStream?.getAudioTracks()[0];
+        if (t) { t.enabled = !t.enabled; updateMic(); }
       });
 
-      // ---------- WebRTC ----------
-      function createPeerConnection() {
+      function makePC() {
         if (pc) { pc.close(); pc = null; }
         if (dc) { dc.close(); dc = null; }
-
-        const newPc = new RTCPeerConnection(rtcConfig);
-        console.log('PeerConnection создан');
-
-        newPc.ontrack = (event) => {
-          if (event.streams && event.streams[0]) {
-            remoteVideo.srcObject = event.streams[0];
+        const p = new RTCPeerConnection(rtcCfg);
+        p.ontrack = e => {
+          if (e.streams?.[0]) {
+            remoteVideo.srcObject = e.streams[0];
             setStatus('status_connected');
-            // Скрываем панель сигнализации, показываем кнопку "Отключиться"
-            signalingPanel.classList.add('hidden');
+            sigPanel.classList.add('hidden');
             disconnectBtn.style.display = 'block';
           }
         };
-
-        newPc.oniceconnectionstatechange = () => {
-          const state = newPc.iceConnectionState;
-          console.log('ICE состояние:', state);
-          if (state === 'checking') { setIceStatus('ice_checking'); setStatus('status_connecting'); }
-          else if (state === 'connected' || state === 'completed') {
-            setIceStatus('ice_connected');
+        p.oniceconnectionstatechange = () => {
+          const s = p.iceConnectionState;
+          if (s === 'checking') { setIce('ice_checking'); setStatus('status_connecting'); }
+          else if (s === 'connected' || s === 'completed') {
+            setIce('ice_connected');
             setStatus('status_connected');
-            signalingPanel.classList.add('hidden');
+            sigPanel.classList.add('hidden');
             disconnectBtn.style.display = 'block';
-          } else if (state === 'disconnected' || state === 'failed') {
-            setIceStatus('ice_disconnected');
+          } else if (s === 'disconnected' || s === 'failed') {
+            setIce('ice_disconnected');
             setStatus('status_disconnected');
-            // Показываем панель снова, если захотим переподключиться
-            signalingPanel.classList.remove('hidden');
+            sigPanel.classList.remove('hidden');
             disconnectBtn.style.display = 'none';
           }
         };
-
         if (isHost) {
-          const newDc = newPc.createDataChannel('game');
-          setupDataChannel(newDc);
+          const d = p.createDataChannel('game');
+          setupDC(d);
         } else {
-          newPc.ondatachannel = (event) => {
-            setupDataChannel(event.channel);
-          };
+          p.ondatachannel = e => setupDC(e.channel);
         }
-
-        if (localStream) {
-          localStream.getTracks().forEach(track => newPc.addTrack(track, localStream));
-        }
-
-        pc = newPc;
-        return newPc;
+        localStream?.getTracks().forEach(t => p.addTrack(t, localStream));
+        pc = p;
+        return p;
       }
 
-      function setupDataChannel(channel) {
-        channel.onopen = () => {
-          console.log('DataChannel открыт');
+      function setupDC(ch) {
+        ch.onopen = () => {
+          // не скрываем панель здесь, скроем при появлении видео
           if (isHost) {
-            dc.send(JSON.stringify({ type: 'init', host: true }));
+            // отправим начальное состояние мяча и счёт
+            ch.send(JSON.stringify({
+              type: 'state',
+              ball: { x: ball.x, y: ball.y, vx: ball.vx, vy: ball.vy, speed: ball.speed },
+              score: { player: scoreP, opponent: scoreO }
+            }));
           }
-          // Скрываем панель, показываем кнопку отключения
-          signalingPanel.classList.add('hidden');
-          disconnectBtn.style.display = 'block';
         };
-        channel.onmessage = (event) => {
+        ch.onmessage = e => {
           try {
-            const msg = JSON.parse(event.data);
-            if (msg.type === 'paddleUpdate') {
-              remotePaddleY = msg.y;
-            } else if (msg.type === 'gameState' && !isHost) {
-              ball.x = msg.ball.x;
-              ball.y = msg.ball.y;
-              ball.vx = msg.ball.vx;
-              ball.vy = msg.ball.vy;
-              ball.speed = msg.ball.speed;
-              scorePlayer = msg.score.player;
-              scoreAI = msg.score.ai;
-              updateScoreDisplay();
+            const m = JSON.parse(e.data);
+            if (m.type === 'paddle') remoteY = m.y;
+            else if (m.type === 'state' && !isHost) {
+              ball.x = m.ball.x; ball.y = m.ball.y;
+              ball.vx = m.ball.vx; ball.vy = m.ball.vy; ball.speed = m.ball.speed;
+              scoreP = m.score.player; scoreO = m.score.opponent;
+              updateScore();
             }
-          } catch(e) { console.error('Ошибка данных:', e); }
+          } catch(err) {}
         };
-        channel.onclose = () => {
-          console.log('DataChannel закрыт');
-          dc = null;
-          remotePaddleY = 0;
+        ch.onclose = () => {
+          dc = null; remoteY = 0;
           if (remoteVideo.srcObject) remoteVideo.srcObject = null;
           setStatus('status_disconnected');
-          signalingPanel.classList.remove('hidden');
+          sigPanel.classList.remove('hidden');
           disconnectBtn.style.display = 'none';
         };
-        channel.onerror = (err) => console.error('Ошибка DataChannel:', err);
-        dc = channel;
+        dc = ch;
       }
 
-      function closeConnection() {
+      function closeConn() {
         if (dc) { dc.close(); dc = null; }
         if (pc) { pc.close(); pc = null; }
         remoteVideo.srcObject = null;
-        remotePaddleY = 0;
-        localSdpText.value = '';
-        acceptOfferBtn.disabled = false;
-        acceptAnswerBtn.disabled = true;
-        sendAnswerBtn.style.display = 'none';
-        setIceStatus('');
-        setInstruction('');
-        document.getElementById('sdp-warning').textContent = '';
-        signalingPanel.classList.remove('hidden');
+        remoteY = 0;
+        localSdp.value = '';
+        acceptOffer.disabled = false;
+        acceptAnswer.disabled = true;
+        sendAnswer.style.display = 'none';
+        setIce(''); setInstr('');
+        sigPanel.classList.remove('hidden');
         disconnectBtn.style.display = 'none';
         setStatus('status_disconnected');
       }
+      disconnectBtn.addEventListener('click', closeConn);
 
-      disconnectBtn.addEventListener('click', closeConnection);
-
-      // Валидация SDP
-      function parseRemoteSDP(text) {
-        if (!text) { alert(t('alert_empty_sdp')); return null; }
+      function parseSDP(txt) {
+        if (!txt) { alert(t('alert_empty_sdp')); return null; }
         try {
-          const desc = JSON.parse(text);
-          if (!desc.type || !desc.sdp) { alert(t('alert_missing_type_sdp')); return null; }
-          return desc;
-        } catch (e) { alert(t('alert_invalid_json')); return null; }
+          const o = JSON.parse(txt);
+          if (!o.type || !o.sdp) { alert(t('alert_missing_type_sdp')); return null; }
+          return o;
+        } catch { alert(t('alert_invalid_json')); return null; }
       }
 
-      // ----- Копирование SDP -----
-      copyLocalSdpBtn.addEventListener('click', () => {
-        const text = localSdpText.value.trim();
-        if (text) {
-          navigator.clipboard.writeText(text).then(() => {
-            copyLocalSdpBtn.textContent = '✅ ' + t('sdp_copied');
-            setTimeout(() => { copyLocalSdpBtn.textContent = t('copy_sdp'); }, 2000);
-          }).catch(() => {
-            localSdpText.select(); document.execCommand('copy');
-            copyLocalSdpBtn.textContent = '✅ ' + t('sdp_copied');
-            setTimeout(() => { copyLocalSdpBtn.textContent = t('copy_sdp'); }, 2000);
-          });
-        }
-      });
-
-      // ----- Сигнализация -----
-      createOfferBtn.addEventListener('click', async () => {
-        createOfferBtn.disabled = true;
-        isHost = true;
-        closeConnection();
-        const currentPc = createPeerConnection();
-        setStatus('status_gathering');
-        setInstruction('');
-
-        try {
-          const offer = await currentPc.createOffer();
-          await currentPc.setLocalDescription(offer);
-          await new Promise(resolve => {
-            if (currentPc.iceGatheringState === 'complete') resolve();
-            else currentPc.onicegatheringstatechange = () => {
-              if (currentPc.iceGatheringState === 'complete') resolve();
-            };
-          });
-          localSdpText.value = JSON.stringify(currentPc.localDescription);
-          setStatus('status_offer_ready');
-          setInstruction('instruction_host');
-          acceptAnswerBtn.disabled = false;
-          sendAnswerBtn.style.display = 'none';
-        } catch (e) {
-          console.error(e);
-          alert(t('alert_bad_sdp'));
-          closeConnection();
-          setStatus('status_waiting');
-        } finally {
-          createOfferBtn.disabled = false;
-        }
-      });
-
-      acceptOfferBtn.addEventListener('click', async () => {
-        acceptOfferBtn.disabled = true;
-        const remoteStr = remoteSdpText.value.trim().replace(/^[\s\uFEFF\xA0]+|[\s\uFEFF\xA0]+$/g, '');
-        const remoteDesc = parseRemoteSDP(remoteStr);
-        if (!remoteDesc) { acceptOfferBtn.disabled = false; return; }
-        if (remoteDesc.type !== 'offer') {
-          showSdpWarning(t('alert_wrong_type_guest', { type: remoteDesc.type }));
-          acceptOfferBtn.disabled = false;
-          return;
-        }
-
-        isHost = false;
-        closeConnection();
-        const currentPc = createPeerConnection();
-        setStatus('status_connecting');
-        setInstruction('instruction_guest');
-
-        try {
-          await currentPc.setRemoteDescription(new RTCSessionDescription(remoteDesc));
-          setStatus('status_gathering');
-          const answer = await currentPc.createAnswer();
-          await currentPc.setLocalDescription(answer);
-          await new Promise(resolve => {
-            if (currentPc.iceGatheringState === 'complete') resolve();
-            else currentPc.onicegatheringstatechange = () => {
-              if (currentPc.iceGatheringState === 'complete') resolve();
-            };
-          });
-          localSdpText.value = JSON.stringify(currentPc.localDescription);
-          setStatus('status_waiting_answer');
-          setInstruction('answer_ready');
-          sendAnswerBtn.style.display = 'block';
-        } catch (e) {
-          console.error(e);
-          alert(t('alert_bad_sdp'));
-          closeConnection();
-          setStatus('status_waiting');
-          acceptOfferBtn.disabled = false;
-        }
-      });
-
-      sendAnswerBtn.addEventListener('click', () => {
-        const text = localSdpText.value.trim();
-        if (text) {
-          navigator.clipboard.writeText(text).then(() => {
-            alert(t('sdp_copied') + ' ' + t('host_waiting'));
-          }).catch(() => {
-            localSdpText.select(); document.execCommand('copy');
-            alert(t('sdp_copied') + ' ' + t('host_waiting'));
-          });
-        }
-        setStatus('status_waiting_answer');
-        setInstruction('answer_ready');
-      });
-
-      acceptAnswerBtn.addEventListener('click', async () => {
-        acceptAnswerBtn.disabled = true;
-        const remoteStr = remoteSdpText.value.trim().replace(/^[\s\uFEFF\xA0]+|[\s\uFEFF\xA0]+$/g, '');
-        const remoteDesc = parseRemoteSDP(remoteStr);
-        if (!remoteDesc) { acceptAnswerBtn.disabled = false; return; }
-        if (remoteDesc.type !== 'answer') {
-          showSdpWarning(t('alert_wrong_type_host', { type: remoteDesc.type }));
-          acceptAnswerBtn.disabled = false;
-          return;
-        }
-
-        const currentPc = pc;
-        if (!currentPc) { alert('Нет активного соединения.'); acceptAnswerBtn.disabled = false; return; }
-
-        try {
-          await currentPc.setRemoteDescription(new RTCSessionDescription(remoteDesc));
-          setStatus('status_connecting');
-          setInstruction('');
-        } catch (e) {
-          console.error(e);
-          alert(t('alert_bad_sdp'));
-          closeConnection();
-          acceptAnswerBtn.disabled = false;
-          setStatus('status_waiting');
-        }
-      });
-
-      // ----- Комната -----
-      function generateRoomId() { return 'pong-' + Math.random().toString(36).substring(2, 10); }
-
-      function updateRoomDisplay(roomId) {
-        roomIdDisplay.textContent = t('room_prefix') + ' ' + roomId;
-        if (isHost) {
-          copyLinkBtn.style.display = 'inline-block';
-          guestJoinForm.style.display = 'none';
-          signalingPanel.style.display = 'block';
-          setInstruction('instruction_host');
-        } else {
-          copyLinkBtn.style.display = 'none';
-          guestJoinForm.style.display = roomFromUrl ? 'none' : 'flex';
-          signalingPanel.style.display = 'block';
-          setInstruction('instruction_guest');
-        }
-      }
-
-      copyLinkBtn.addEventListener('click', () => {
-        const url = new URL(window.location.href);
-        url.searchParams.set('room', currentRoomId);
-        navigator.clipboard.writeText(url.toString()).then(() => {
-          setStatus('link_copied');
-          setTimeout(() => { if (window._statusKey === 'link_copied') setStatus('status_waiting'); }, 2000);
+      copySdpBtn.addEventListener('click', () => {
+        const txt = localSdp.value.trim();
+        if (!txt) return;
+        navigator.clipboard.writeText(txt).then(() => {
+          copySdpBtn.textContent = '✅ ' + t('sdp_copied');
+          setTimeout(() => copySdpBtn.textContent = t('copy_sdp'), 2000);
+        }).catch(() => {
+          localSdp.select(); document.execCommand('copy');
+          copySdpBtn.textContent = '✅ ' + t('sdp_copied');
+          setTimeout(() => copySdpBtn.textContent = t('copy_sdp'), 2000);
         });
       });
 
+      createOffer.addEventListener('click', async () => {
+        createOffer.disabled = true;
+        isHost = true;
+        closeConn();
+        const p = makePC();
+        setStatus('status_gathering'); setInstr('');
+        try {
+          const offer = await p.createOffer();
+          await p.setLocalDescription(offer);
+          await new Promise(r => { if (p.iceGatheringState === 'complete') r(); else p.onicegatheringstatechange = () => { if (p.iceGatheringState === 'complete') r(); }; });
+          localSdp.value = JSON.stringify(p.localDescription);
+          setStatus('status_offer_ready'); setInstr('instruction_host');
+          acceptAnswer.disabled = false; sendAnswer.style.display = 'none';
+        } catch (e) { alert(t('alert_bad_sdp')); closeConn(); setStatus('status_waiting'); }
+        finally { createOffer.disabled = false; }
+      });
+
+      acceptOffer.addEventListener('click', async () => {
+        acceptOffer.disabled = true;
+        const raw = remoteSdp.value.trim().replace(/^[\s\uFEFF\xA0]+|[\s\uFEFF\xA0]+$/g, '');
+        const desc = parseSDP(raw);
+        if (!desc) { acceptOffer.disabled = false; return; }
+        if (desc.type !== 'offer') { warn(t('alert_wrong_type_guest', { type: desc.type })); acceptOffer.disabled = false; return; }
+        isHost = false;
+        closeConn();
+        const p = makePC();
+        setStatus('status_connecting'); setInstr('instruction_guest');
+        try {
+          await p.setRemoteDescription(new RTCSessionDescription(desc));
+          setStatus('status_gathering');
+          const answer = await p.createAnswer();
+          await p.setLocalDescription(answer);
+          await new Promise(r => { if (p.iceGatheringState === 'complete') r(); else p.onicegatheringstatechange = () => { if (p.iceGatheringState === 'complete') r(); }; });
+          localSdp.value = JSON.stringify(p.localDescription);
+          setStatus('status_waiting_answer'); setInstr('answer_ready');
+          sendAnswer.style.display = 'block';
+        } catch (e) { alert(t('alert_bad_sdp')); closeConn(); setStatus('status_waiting'); acceptOffer.disabled = false; }
+      });
+
+      sendAnswer.addEventListener('click', () => {
+        const txt = localSdp.value.trim();
+        if (txt) {
+          navigator.clipboard.writeText(txt).then(() => alert(t('sdp_copied') + ' ' + t('host_waiting'))).catch(() => {
+            localSdp.select(); document.execCommand('copy'); alert(t('sdp_copied') + ' ' + t('host_waiting'));
+          });
+        }
+      });
+
+      acceptAnswer.addEventListener('click', async () => {
+        acceptAnswer.disabled = true;
+        const raw = remoteSdp.value.trim().replace(/^[\s\uFEFF\xA0]+|[\s\uFEFF\xA0]+$/g, '');
+        const desc = parseSDP(raw);
+        if (!desc) { acceptAnswer.disabled = false; return; }
+        if (desc.type !== 'answer') { warn(t('alert_wrong_type_host', { type: desc.type })); acceptAnswer.disabled = false; return; }
+        if (!pc) { alert('Нет соединения.'); acceptAnswer.disabled = false; return; }
+        try {
+          await pc.setRemoteDescription(new RTCSessionDescription(desc));
+          setStatus('status_connecting'); setInstr('');
+        } catch (e) { alert(t('alert_bad_sdp')); closeConn(); acceptAnswer.disabled = false; setStatus('status_waiting'); }
+      });
+
+      function genRoom() { return 'pong-' + Math.random().toString(36).substr(2, 8); }
+      function showRoom(id) {
+        roomSpan.textContent = t('room_prefix') + ' ' + id;
+        if (isHost) {
+          copyLinkBtn.style.display = 'inline-block';
+          joinForm.style.display = 'none';
+          sigPanel.style.display = 'block';
+          setInstr('instruction_host');
+        } else {
+          copyLinkBtn.style.display = 'none';
+          joinForm.style.display = urlRoom ? 'none' : 'flex';
+          sigPanel.style.display = 'block';
+          setInstr('instruction_guest');
+        }
+      }
+      copyLinkBtn.addEventListener('click', () => {
+        const u = new URL(location.href);
+        u.searchParams.set('room', roomId);
+        navigator.clipboard.writeText(u.toString()).then(() => { setStatus('link_copied'); setTimeout(() => { if (window._status === 'link_copied') setStatus('status_waiting'); }, 2000); });
+      });
       joinBtn.addEventListener('click', () => {
-        const newRoom = roomInput.value.trim();
-        if (newRoom) {
-          isHost = false;
-          currentRoomId = newRoom;
-          const url = new URL(window.location.href);
-          url.searchParams.set('room', newRoom);
-          window.history.replaceState({}, '', url.toString());
-          updateRoomDisplay(newRoom);
-          guestJoinForm.style.display = 'none';
+        const rid = roomInput.value.trim();
+        if (rid) {
+          isHost = false; roomId = rid;
+          history.replaceState({}, '', `${location.pathname}?room=${rid}`);
+          showRoom(rid); joinForm.style.display = 'none';
           setStatus('status_waiting');
         }
       });
 
-      // ---------- Старт ----------
       window.addEventListener('load', async () => {
-        currentLang = detectLanguage();
-        setLanguage(currentLang);
+        currentLang = detectLang(); setLang(currentLang);
         try {
-          await initCameraAndMediaPipe();
-          resizeCanvas();
-          updateScoreDisplay();
-          window.addEventListener('resize', resizeCanvas);
-          gameLoop();
-
-          if (roomFromUrl) {
-            isHost = false;
-            currentRoomId = roomFromUrl;
-            updateRoomDisplay(roomFromUrl);
-            setStatus('status_waiting');
-          } else {
-            isHost = true;
-            currentRoomId = generateRoomId();
-            window.history.replaceState({}, '', `${location.pathname}?room=${currentRoomId}`);
-            updateRoomDisplay(currentRoomId);
-            setStatus('status_waiting');
-          }
-        } catch (err) {
-          console.error(err);
-          alert(t('alert_camera'));
-        }
+          await initCam();
+          resize(); updateScore();
+          window.addEventListener('resize', resize);
+          loop();
+          if (urlRoom) { isHost = false; roomId = urlRoom; showRoom(urlRoom); setStatus('status_waiting'); }
+          else { isHost = true; roomId = genRoom(); history.replaceState({}, '', `${location.pathname}?room=${roomId}`); showRoom(roomId); setStatus('status_waiting'); }
+        } catch (e) { alert(t('alert_camera')); }
       });
     })();
   </script>
