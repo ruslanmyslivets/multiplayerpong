@@ -255,67 +255,80 @@
       }
       function updateScore() { scoreDiv.textContent = `${scoreP} : ${scoreO}`; }
 
+      function isMultiplayer() {
+        return dc && dc.readyState === 'open';
+      }
+
       function loop() {
         if (!cw || !ch) return requestAnimationFrame(loop);
 
-        // Управление игроком (рука), если рука видна – двигаем ракетку, иначе она стоит
+        // Управление своей ракеткой (работает всегда, если рука обнаружена)
         if (hand) {
           let cy = handY * ch;
           cy = Math.max(PH/2, Math.min(ch - PH/2, cy));
           player.y = cy - PH/2;
         }
 
-        // ИИ управляет правой ракеткой, если нет удалённого игрока
-        if (!dc || dc.readyState !== 'open') {
-          const aiCy = opponent.y + PH/2;
-          if (ball.y < aiCy - 5) opponent.y -= 4.5;
-          else if (ball.y > aiCy + 5) opponent.y += 4.5;
+        // Управление правой ракеткой (ИИ или удалённый игрок)
+        if (!isMultiplayer()) {
+          // ИИ в одиночном режиме двигается только при обнаружении руки
+          if (hand) {
+            const aiCy = opponent.y + PH/2;
+            if (ball.y < aiCy - 5) opponent.y -= 4.5;
+            else if (ball.y > aiCy + 5) opponent.y += 4.5;
+          }
         } else {
           opponent.y = remoteY;
         }
         opponent.y = Math.max(0, Math.min(ch - PH, opponent.y));
 
-        // Отправка своей позиции при мультиплеере
-        if (dc && dc.readyState === 'open' && hand) {
+        // Отправка своей позиции в мультиплеере
+        if (isMultiplayer() && hand) {
           try { dc.send(JSON.stringify({ type: 'paddle', y: player.y })); } catch(e) {}
         }
 
-        // Физика мяча (локально или хост) – ВСЕГДА выполняется, без проверки hand/running
-        if (!dc || dc.readyState !== 'open' || isHost) {
-          ball.x += ball.vx;
-          ball.y += ball.vy;
+        // Физика мяча
+        if (!isMultiplayer() || isHost) {
+          // Одиночный режим: двигаем мяч только когда рука обнаружена
+          // Мультиплеер (хост): двигаем всегда
+          if (!isMultiplayer() && !hand) {
+            // Пауза в одиночке: не обновляем мяч
+          } else {
+            ball.x += ball.vx;
+            ball.y += ball.vy;
 
-          if (ball.y - ball.r <= 0 || ball.y + ball.r >= ch) {
-            ball.vy *= -1;
-            ball.y = Math.max(ball.r, Math.min(ch - ball.r, ball.y));
-          }
+            if (ball.y - ball.r <= 0 || ball.y + ball.r >= ch) {
+              ball.vy *= -1;
+              ball.y = Math.max(ball.r, Math.min(ch - ball.r, ball.y));
+            }
 
-          if (ball.vx < 0 && ball.x - ball.r <= player.x + PW &&
-              ball.x - ball.r >= player.x &&
-              ball.y >= player.y && ball.y <= player.y + PH) {
-            const hit = (ball.y - player.y) / PH;
-            const ang = (hit - 0.5) * (Math.PI/3);
-            ball.vx = ball.speed * Math.cos(ang);
-            ball.vy = ball.speed * Math.sin(ang);
-            if (ball.vx < 0) ball.vx *= -1;
-            ball.speed = Math.min(ball.speed + 0.2, 12);
-          }
-          if (ball.vx > 0 && ball.x + ball.r >= opponent.x &&
-              ball.x + ball.r <= opponent.x + PW &&
-              ball.y >= opponent.y && ball.y <= opponent.y + PH) {
-            const hit = (ball.y - opponent.y) / PH;
-            const ang = (hit - 0.5) * (Math.PI/3);
-            ball.vx = -ball.speed * Math.cos(ang);
-            ball.vy = ball.speed * Math.sin(ang);
-            if (ball.vx > 0) ball.vx *= -1;
-            ball.speed = Math.min(ball.speed + 0.2, 12);
-          }
+            if (ball.vx < 0 && ball.x - ball.r <= player.x + PW &&
+                ball.x - ball.r >= player.x &&
+                ball.y >= player.y && ball.y <= player.y + PH) {
+              const hit = (ball.y - player.y) / PH;
+              const ang = (hit - 0.5) * (Math.PI/3);
+              ball.vx = ball.speed * Math.cos(ang);
+              ball.vy = ball.speed * Math.sin(ang);
+              if (ball.vx < 0) ball.vx *= -1;
+              ball.speed = Math.min(ball.speed + 0.2, 12);
+            }
+            if (ball.vx > 0 && ball.x + ball.r >= opponent.x &&
+                ball.x + ball.r <= opponent.x + PW &&
+                ball.y >= opponent.y && ball.y <= opponent.y + PH) {
+              const hit = (ball.y - opponent.y) / PH;
+              const ang = (hit - 0.5) * (Math.PI/3);
+              ball.vx = -ball.speed * Math.cos(ang);
+              ball.vy = ball.speed * Math.sin(ang);
+              if (ball.vx > 0) ball.vx *= -1;
+              ball.speed = Math.min(ball.speed + 0.2, 12);
+            }
 
-          if (ball.x + ball.r < 0) { scoreO++; updateScore(); resetBall(); }
-          else if (ball.x - ball.r > cw) { scoreP++; updateScore(); resetBall(); }
+            if (ball.x + ball.r < 0) { scoreO++; updateScore(); resetBall(); }
+            else if (ball.x - ball.r > cw) { scoreP++; updateScore(); resetBall(); }
+          }
 
           // Отправка состояния гостю
-          if (dc && dc.readyState === 'open' && isHost) {
+          if (isMultiplayer() && isHost) {
             try {
               dc.send(JSON.stringify({
                 type: 'state',
@@ -325,8 +338,7 @@
             } catch(e) {}
           }
         } else {
-          // Гость: мяч уже двигается по данным от хоста (полученным в onmessage)
-          // ничего не делаем
+          // Гость: мяч уже обновлён через onmessage, ничего не делаем
         }
 
         // Отрисовка
