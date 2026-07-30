@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-  <title>Pong P2P – стабильный MediaPipe</title>
+  <title>MultiCamPong</title>
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
     body { background: #000; display: flex; height: 100vh; overflow: hidden; position: relative; font-family: monospace; }
@@ -75,11 +75,11 @@
     <button id="lang-switch">🌐</button>
   </div>
 
-  <!-- Стабильная версия MediaPipe Hands без SIMD -->
-  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils@0.3.1631143084/camera_utils.js" crossorigin="anonymous"></script>
-  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/control_utils@0.6.1631143084/control_utils.js" crossorigin="anonymous"></script>
-  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils@0.3.1631143084/drawing_utils.js" crossorigin="anonymous"></script>
-  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands@0.4.1631143084/hands.js" crossorigin="anonymous"></script>
+  <!-- TensorFlow.js + Handpose (надёжное распознавание пальцев) -->
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs-core@3.18.0/dist/tf-core.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs-converter@3.18.0/dist/tf-converter.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs-backend-webgl@3.18.0/dist/tf-backend-webgl.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/handpose@0.0.7/dist/handpose.min.js"></script>
 
   <script>
     (function() {
@@ -340,15 +340,38 @@
         requestAnimationFrame(loop);
       }
 
-      function onResults(r) {
-        if (r.multiHandLandmarks?.length) {
-          const lm = r.multiHandLandmarks[0];
-          handY = (lm[4].y + lm[8].y) / 2;
-          hand = true;
-          console.log('hand detected Y:', handY.toFixed(2));
-        } else {
-          hand = false;
+      // Инициализация Handpose
+      async function initHandpose() {
+        const model = await handpose.load();
+        console.log('Handpose model loaded');
+        async function detect() {
+          try {
+            if (videoEl.readyState >= 2) {
+              const predictions = await model.estimateHands(videoEl);
+              if (predictions.length > 0) {
+                const keypoints = predictions[0].landmarks;
+                // Индексы: 4 – большой палец, 8 – указательный
+                const thumb = keypoints[4];
+                const index = keypoints[8];
+                if (thumb && index) {
+                  // Средняя точка между большим и указательным
+                  const midY = (thumb[1] + index[1]) / 2;
+                  handY = midY / videoEl.videoHeight;
+                  hand = true;
+                  console.log('hand detected Y:', handY.toFixed(2));
+                } else {
+                  hand = false;
+                }
+              } else {
+                hand = false;
+              }
+            }
+          } catch (e) {
+            // игнорируем ошибки
+          }
+          requestAnimationFrame(detect);
         }
+        detect();
       }
 
       async function initCam() {
@@ -356,25 +379,7 @@
         videoEl.srcObject = localStream;
         videoEl.muted = true;
         updateMic();
-        const hands = new Hands({
-          locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands@0.4.1631143084/${file}`
-        });
-        hands.setOptions({
-          maxNumHands: 1,
-          modelComplexity: 1,
-          minDetectionConfidence: 0.7,
-          minTrackingConfidence: 0.5
-        });
-        hands.onResults(onResults);
-        async function detect() {
-          try {
-            if (videoEl.readyState >= 2) {
-              await hands.send({ image: videoEl });
-            }
-          } catch (e) {}
-          requestAnimationFrame(detect);
-        }
-        detect();
+        initHandpose(); // запуск распознавания рук
       }
 
       function updateMic() {
