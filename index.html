@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-  <title>Pong P2P (ручная сигнализация)</title>
+  <title>MultiCamPong</title>
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
     body { 
@@ -42,28 +42,27 @@
       position: absolute; top: 0; left: 0;
       width: 100%; height: 100%; pointer-events: none;
     }
-    /* UI */
     #ui {
       position: absolute; bottom: 20px; left: 20px;
       color: white; font-size: 14px;
       background: rgba(0,0,0,0.8); padding: 8px 15px;
       border-radius: 8px; z-index: 25;
       display: flex; flex-wrap: wrap; align-items: center; gap: 10px;
-      max-width: 90%;
     }
     #signaling-panel {
       position: absolute; bottom: 20px; right: 20px;
       color: white; font-size: 12px;
-      background: rgba(0,0,0,0.8); padding: 10px;
+      background: rgba(0,0,0,0.9); padding: 10px;
       border-radius: 8px; z-index: 25;
       display: flex; flex-direction: column; gap: 6px;
-      max-width: 280px;
+      max-width: 300px;
     }
     #signaling-panel textarea {
-      width: 100%; height: 50px; font-size: 10px; background: #333; color: white; border: 1px solid #888; resize: none;
+      width: 100%; height: 55px; font-size: 10px; background: #333; color: white; border: 1px solid #888; resize: none;
+      font-family: monospace;
     }
     #signaling-panel button {
-      font-size: 11px; padding: 3px 6px; cursor: pointer; background: #444; color: white; border: 1px solid white; border-radius: 4px;
+      font-size: 11px; padding: 4px 8px; cursor: pointer; background: #444; color: white; border: 1px solid white; border-radius: 4px;
     }
     #signaling-panel button:disabled { opacity: 0.5; cursor: not-allowed; }
     #lang-switch {
@@ -74,6 +73,7 @@
       z-index: 30;
     }
     #status-text { color: #0f0; }
+    #ice-status { font-size: 11px; color: #aaa; margin-top: 2px; }
     #mic-status { margin-left: 10px; color: #ff0; cursor: pointer; }
   </style>
 </head>
@@ -90,6 +90,7 @@
     <canvas id="game-canvas"></canvas>
     <div id="ui">
       <span id="status-text"></span>
+      <span id="ice-status"></span>
       <span id="mic-status" title="Микрофон">🔇</span>
     </div>
     <div id="signaling-panel">
@@ -122,12 +123,19 @@
           accept_offer: 'Принять предложение и ответить (гость)',
           accept_answer: 'Принять ответ (хост)',
           close_connection: 'Закрыть соединение',
-          status_waiting: 'Ожидание соперника...',
-          status_connecting: 'Подключение...',
+          status_waiting: 'Ожидание начала сигнализации',
+          status_gathering: 'Сбор ICE-кандидатов...',
+          status_offer_ready: 'Предложение готово, скопируйте SDP',
+          status_waiting_answer: 'Ожидание ответа...',
+          status_connecting: 'Установка соединения...',
           status_connected: 'Соперник подключился!',
           status_disconnected: 'Соперник отключился',
           alert_camera: 'Не удалось запустить камеру/микрофон. Проверьте разрешения и HTTPS.',
-          mic_title: 'Микрофон'
+          alert_bad_sdp: 'Ошибка: неверный формат SDP. Скопируйте весь текст, включая фигурные скобки.',
+          mic_title: 'Микрофон',
+          ice_checking: 'Проверка соединения...',
+          ice_connected: 'Канал установлен',
+          ice_disconnected: 'Канал разорван',
         },
         en: {
           signaling_title: 'Manual Signaling',
@@ -137,12 +145,19 @@
           accept_offer: 'Accept Offer & Answer (guest)',
           accept_answer: 'Accept Answer (host)',
           close_connection: 'Close Connection',
-          status_waiting: 'Waiting for opponent...',
-          status_connecting: 'Connecting...',
+          status_waiting: 'Waiting to start signaling',
+          status_gathering: 'Gathering ICE candidates...',
+          status_offer_ready: 'Offer ready, copy SDP',
+          status_waiting_answer: 'Waiting for answer...',
+          status_connecting: 'Establishing connection...',
           status_connected: 'Opponent connected!',
           status_disconnected: 'Opponent disconnected',
           alert_camera: 'Could not access camera/mic. Check permissions and HTTPS.',
-          mic_title: 'Microphone'
+          alert_bad_sdp: 'Error: invalid SDP format. Copy the entire text including curly braces.',
+          mic_title: 'Microphone',
+          ice_checking: 'Checking connection...',
+          ice_connected: 'Channel established',
+          ice_disconnected: 'Channel disconnected',
         }
       };
 
@@ -168,6 +183,8 @@
         document.querySelector('#accept-answer-btn').textContent = t('accept_answer');
         document.querySelector('#close-connection-btn').textContent = t('close_connection');
         document.querySelector('#mic-status').title = t('mic_title');
+        if (window._iceStatusKey) setIceStatus(window._iceStatusKey);
+        if (window._statusKey) setStatus(window._statusKey);
       }
       function updateLangSwitchButton() {
         document.getElementById('lang-switch').textContent = currentLang === 'ru' ? '🇷🇺' : '🇬🇧';
@@ -177,8 +194,12 @@
       });
 
       function setStatus(key) {
-        const el = document.getElementById('status-text');
-        el.textContent = t(key);
+        window._statusKey = key;
+        document.getElementById('status-text').textContent = t(key);
+      }
+      function setIceStatus(key) {
+        window._iceStatusKey = key;
+        document.getElementById('ice-status').textContent = t(key);
       }
 
       // ---------- DOM ----------
@@ -398,6 +419,15 @@
 
       // ---------- WebRTC (ручная сигнализация) ----------
       function setupPeerConnection() {
+        if (pc) {
+          pc.close();
+          pc = null;
+        }
+        if (dc) {
+          dc.close();
+          dc = null;
+        }
+
         pc = new RTCPeerConnection(rtcConfig);
 
         pc.ontrack = (event) => {
@@ -407,20 +437,23 @@
           }
         };
 
-        pc.onicecandidate = (event) => {
-          if (event.candidate) {
-            console.log('ICE candidate:', event.candidate);
-          }
-          // Можно не выводить, обновим SDP после завершения сбора
-        };
-
         pc.oniceconnectionstatechange = () => {
-          if (pc.iceConnectionState === 'disconnected' || pc.iceConnectionState === 'failed') {
+          const state = pc.iceConnectionState;
+          console.log('ICE state:', state);
+          if (state === 'checking') setIceStatus('ice_checking');
+          else if (state === 'connected' || state === 'completed') {
+            setIceStatus('ice_connected');
+            setStatus('status_connected');
+          } else if (state === 'disconnected' || state === 'failed') {
+            setIceStatus('ice_disconnected');
             setStatus('status_disconnected');
           }
         };
 
-        // DataChannel
+        pc.onicegatheringstatechange = () => {
+          // Будем использовать в createOffer/acceptOffer
+        };
+
         if (isHost) {
           dc = pc.createDataChannel('game');
           setupDataChannel(dc);
@@ -431,7 +464,6 @@
           };
         }
 
-        // Добавляем локальные треки
         if (localStream) {
           localStream.getTracks().forEach(track => pc.addTrack(track, localStream));
         }
@@ -476,7 +508,7 @@
         remotePaddleY = 0;
         localSdpText.value = '';
         acceptAnswerBtn.disabled = true;
-        setStatus('status_disconnected');
+        setIceStatus('');
       }
 
       // Кнопки
@@ -484,61 +516,75 @@
         isHost = true;
         closeConnection();
         setupPeerConnection();
+        setStatus('status_gathering');
 
         const offer = await pc.createOffer();
         await pc.setLocalDescription(offer);
 
-        // Ждём завершения сбора ICE (упрощённо)
-        await new Promise(r => pc.onicegatheringstatechange = () => {
-          if (pc.iceGatheringState === 'complete') r();
+        // Ждём завершения сбора кандидатов
+        await new Promise(resolve => {
+          if (pc.iceGatheringState === 'complete') resolve();
+          else pc.onicegatheringstatechange = () => {
+            if (pc.iceGatheringState === 'complete') resolve();
+          };
         });
+
         localSdpText.value = JSON.stringify(pc.localDescription);
-        setStatus('status_waiting');
+        setStatus('status_offer_ready');
+        acceptAnswerBtn.disabled = false;
       });
 
       acceptOfferBtn.addEventListener('click', async () => {
         isHost = false;
         closeConnection();
         setupPeerConnection();
+        setStatus('status_connecting');
 
         try {
-          const offerStr = remoteSdpText.value.trim();
-          const offer = JSON.parse(offerStr);
-          await pc.setRemoteDescription(new RTCSessionDescription(offer));
+          const remoteStr = remoteSdpText.value.trim();
+          const remoteDesc = JSON.parse(remoteStr);
+          if (!remoteDesc.type || !remoteDesc.sdp) throw new Error('Invalid SDP');
+          await pc.setRemoteDescription(new RTCSessionDescription(remoteDesc));
+
+          setStatus('status_gathering');
           const answer = await pc.createAnswer();
           await pc.setLocalDescription(answer);
-          await new Promise(r => pc.onicegatheringstatechange = () => {
-            if (pc.iceGatheringState === 'complete') r();
+
+          await new Promise(resolve => {
+            if (pc.iceGatheringState === 'complete') resolve();
+            else pc.onicegatheringstatechange = () => {
+              if (pc.iceGatheringState === 'complete') resolve();
+            };
           });
+
           localSdpText.value = JSON.stringify(pc.localDescription);
-          setStatus('status_connecting');
+          setStatus('status_waiting_answer'); // для гостя это означает, что он отправил answer
         } catch (e) {
-          alert('Ошибка: неверный SDP предложения');
+          console.error(e);
+          alert(t('alert_bad_sdp'));
+          setStatus('status_waiting');
+          closeConnection();
         }
       });
 
       acceptAnswerBtn.addEventListener('click', async () => {
         try {
-          const answerStr = remoteSdpText.value.trim();
-          const answer = JSON.parse(answerStr);
-          await pc.setRemoteDescription(new RTCSessionDescription(answer));
+          const remoteStr = remoteSdpText.value.trim();
+          const remoteDesc = JSON.parse(remoteStr);
+          if (!remoteDesc.type || !remoteDesc.sdp) throw new Error('Invalid SDP');
+          await pc.setRemoteDescription(new RTCSessionDescription(remoteDesc));
           acceptAnswerBtn.disabled = true;
-          // Статус обновится при установке соединения
+          setStatus('status_connecting');
         } catch (e) {
-          alert('Ошибка при установке ответа');
+          console.error(e);
+          alert(t('alert_bad_sdp'));
+          closeConnection();
         }
       });
 
-      closeConnectionBtn.addEventListener('click', closeConnection);
-
-      // Разблокируем кнопку "Принять ответ" если хост уже создал предложение и получил ответ
-      // Можно автоматически, но оставим ручное управление. Для удобства: если localSDP содержит offer, включаем кнопку.
-      // Но проще: при создании предложения enable acceptAnswerBtn.
-      // Обновим createOfferBtn:
-      const origCreateOffer = createOfferBtn.onclick;
-      createOfferBtn.addEventListener('click', () => {
-        // После создания предложения хост может принять ответ позже
-        acceptAnswerBtn.disabled = false;
+      closeConnectionBtn.addEventListener('click', () => {
+        closeConnection();
+        setStatus('status_waiting');
       });
 
       // ---------- Старт ----------
@@ -552,7 +598,6 @@
           updateScoreDisplay();
           window.addEventListener('resize', resizeCanvas);
           gameLoop();
-
           setStatus('status_waiting');
         } catch (err) {
           console.error(err);
