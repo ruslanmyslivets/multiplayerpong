@@ -262,21 +262,20 @@
       function loop() {
         if (!cw || !ch) return requestAnimationFrame(loop);
 
-        // Управление своей ракеткой (работает всегда, если рука обнаружена)
+        // Управление игроком – всегда, если рука обнаружена
         if (hand) {
           let cy = handY * ch;
           cy = Math.max(PH/2, Math.min(ch - PH/2, cy));
           player.y = cy - PH/2;
         }
+        // Если рука не обнаружена, player.y остаётся на последнем значении (ракетка не движется)
 
-        // Управление правой ракеткой (ИИ или удалённый игрок)
+        // Управление правой ракеткой (ИИ или соперник)
         if (!isMultiplayer()) {
-          // ИИ в одиночном режиме двигается только при обнаружении руки
-          if (hand) {
-            const aiCy = opponent.y + PH/2;
-            if (ball.y < aiCy - 5) opponent.y -= 4.5;
-            else if (ball.y > aiCy + 5) opponent.y += 4.5;
-          }
+          // Одиночный режим: ИИ всегда активен, чтобы не замирать
+          const aiCy = opponent.y + PH/2;
+          if (ball.y < aiCy - 5) opponent.y -= 4.5;
+          else if (ball.y > aiCy + 5) opponent.y += 4.5;
         } else {
           opponent.y = remoteY;
         }
@@ -289,10 +288,9 @@
 
         // Физика мяча
         if (!isMultiplayer() || isHost) {
-          // Одиночный режим: двигаем мяч только когда рука обнаружена
-          // Мультиплеер (хост): двигаем всегда
+          // В одиночном режиме: если рука не обнаружена, мяч замирает (пауза)
           if (!isMultiplayer() && !hand) {
-            // Пауза в одиночке: не обновляем мяч
+            // пауза – ничего не делаем
           } else {
             ball.x += ball.vx;
             ball.y += ball.vy;
@@ -327,7 +325,6 @@
             else if (ball.x - ball.r > cw) { scoreP++; updateScore(); resetBall(); }
           }
 
-          // Отправка состояния гостю
           if (isMultiplayer() && isHost) {
             try {
               dc.send(JSON.stringify({
@@ -338,7 +335,7 @@
             } catch(e) {}
           }
         } else {
-          // Гость: мяч уже обновлён через onmessage, ничего не делаем
+          // Гость: мяч уже обновлён через onmessage
         }
 
         // Отрисовка
