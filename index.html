@@ -91,6 +91,7 @@
     #guest-join-form { display: flex; gap: 5px; align-items: center; }
     #room-input { padding: 3px 6px; font-size: 13px; width: 120px; border-radius: 4px; border: 1px solid #888; background: #333; color: white; }
     #join-btn { background: #444; color: white; border: 1px solid white; padding: 4px 10px; border-radius: 4px; cursor: pointer; font-size: 12px; }
+    .instruction { font-size: 11px; color: #ccc; margin-top: 2px; }
   </style>
 </head>
 <body>
@@ -123,12 +124,13 @@
       </div>
       <div class="sdp-block">
         <textarea id="remote-sdp" placeholder="Вставьте SDP собеседника"></textarea>
-        <button class="copy-sdp-btn" id="paste-remote-sdp" style="display:none;"></button>
       </div>
       <button id="create-offer-btn">Создать предложение (хост)</button>
       <button id="accept-offer-btn">Принять предложение и ответить (гость)</button>
+      <button id="send-answer-btn" style="display:none;">📤 Отправить ответ хосту</button>
       <button id="accept-answer-btn" disabled>Принять ответ (хост)</button>
       <button id="close-connection-btn">Закрыть соединение</button>
+      <div id="instruction" class="instruction"></div>
     </div>
     <button id="lang-switch">🌐</button>
   </div>
@@ -154,6 +156,7 @@
           create_offer: 'Создать предложение (хост)',
           accept_offer: 'Принять предложение и ответить (гость)',
           accept_answer: 'Принять ответ (хост)',
+          send_answer: '📤 Отправить ответ хосту',
           close_connection: 'Закрыть соединение',
           status_waiting: 'Ожидание соперника...',
           status_gathering: 'Сбор ICE-кандидатов...',
@@ -172,6 +175,9 @@
           host_waiting: 'Отправьте SDP гостю',
           copy_sdp: '📋 Копировать',
           sdp_copied: 'SDP скопирован!',
+          instruction_guest: 'Вставьте SDP хоста выше и нажмите "Принять предложение".',
+          instruction_host: 'Создайте предложение, отправьте его гостю. После получения ответа вставьте его и нажмите "Принять ответ".',
+          answer_ready: 'Ваш ответ готов! Нажмите "Отправить ответ хосту", скопируйте SDP и передайте его хосту.',
         },
         en: {
           room_prefix: 'Room ID:',
@@ -184,6 +190,7 @@
           create_offer: 'Create Offer (host)',
           accept_offer: 'Accept Offer & Answer (guest)',
           accept_answer: 'Accept Answer (host)',
+          send_answer: '📤 Send answer to host',
           close_connection: 'Close Connection',
           status_waiting: 'Waiting for opponent...',
           status_gathering: 'Gathering ICE candidates...',
@@ -202,6 +209,9 @@
           host_waiting: 'Send SDP to guest',
           copy_sdp: '📋 Copy',
           sdp_copied: 'SDP copied!',
+          instruction_guest: 'Paste host SDP above and press "Accept Offer".',
+          instruction_host: 'Create offer, send it to guest. After receiving answer, paste it and press "Accept Answer".',
+          answer_ready: 'Your answer is ready! Click "Send answer to host", copy SDP and send it to the host.',
         }
       };
 
@@ -225,12 +235,15 @@
         document.querySelector('#create-offer-btn').textContent = t('create_offer');
         document.querySelector('#accept-offer-btn').textContent = t('accept_offer');
         document.querySelector('#accept-answer-btn').textContent = t('accept_answer');
+        document.querySelector('#send-answer-btn').textContent = t('send_answer');
         document.querySelector('#close-connection-btn').textContent = t('close_connection');
         document.querySelector('#mic-status').title = t('mic_title');
         document.querySelector('#copy-link-btn').textContent = t('copy_link');
         document.querySelector('#join-btn').textContent = t('join');
         document.querySelector('#room-input').placeholder = t('room_placeholder');
         document.querySelector('#copy-local-sdp').textContent = t('copy_sdp');
+        // Обновим инструкцию, если она задана
+        if (window._instructionKey) setInstruction(window._instructionKey);
         if (window._iceStatusKey) setIceStatus(window._iceStatusKey);
         if (window._statusKey) setStatus(window._statusKey);
       }
@@ -248,6 +261,10 @@
       function setIceStatus(key) {
         window._iceStatusKey = key;
         document.getElementById('ice-status').textContent = t(key);
+      }
+      function setInstruction(key) {
+        window._instructionKey = key;
+        document.getElementById('instruction').textContent = t(key);
       }
 
       // ---------- DOM ----------
@@ -268,6 +285,7 @@
       const copyLocalSdpBtn = document.getElementById('copy-local-sdp');
       const createOfferBtn = document.getElementById('create-offer-btn');
       const acceptOfferBtn = document.getElementById('accept-offer-btn');
+      const sendAnswerBtn = document.getElementById('send-answer-btn');
       const acceptAnswerBtn = document.getElementById('accept-answer-btn');
       const closeConnectionBtn = document.getElementById('close-connection-btn');
 
@@ -293,8 +311,7 @@
       const rtcConfig = {
         iceServers: [
           { urls: 'stun:stun.l.google.com:19302' },
-          // Раскомментируйте для обхода сложных NAT
-          // { urls: 'turn:openrelay.metered.ca:80', username: 'openrelayproject', credential: 'openrelayproject' }
+          { urls: 'turn:openrelay.metered.ca:80', username: 'openrelayproject', credential: 'openrelayproject' }
         ]
       };
 
@@ -488,8 +505,10 @@
         }
 
         pc = new RTCPeerConnection(rtcConfig);
+        console.log('PeerConnection создан, ICE серверы:', rtcConfig.iceServers);
 
         pc.ontrack = (event) => {
+          console.log('Получен удалённый трек');
           if (event.streams && event.streams[0]) {
             remoteVideo.srcObject = event.streams[0];
             setStatus('status_connected');
@@ -498,9 +517,11 @@
 
         pc.oniceconnectionstatechange = () => {
           const state = pc.iceConnectionState;
-          console.log('ICE state:', state);
-          if (state === 'checking') setIceStatus('ice_checking');
-          else if (state === 'connected' || state === 'completed') {
+          console.log('ICE состояние:', state);
+          if (state === 'checking') {
+            setIceStatus('ice_checking');
+            setStatus('status_connecting');
+          } else if (state === 'connected' || state === 'completed') {
             setIceStatus('ice_connected');
             setStatus('status_connected');
           } else if (state === 'disconnected' || state === 'failed') {
@@ -514,18 +535,24 @@
           setupDataChannel(dc);
         } else {
           pc.ondatachannel = (event) => {
+            console.log('Получен DataChannel');
             dc = event.channel;
             setupDataChannel(dc);
           };
         }
 
         if (localStream) {
-          localStream.getTracks().forEach(track => pc.addTrack(track, localStream));
+          localStream.getTracks().forEach(track => {
+            console.log('Добавлен трек:', track.kind);
+            pc.addTrack(track, localStream);
+          });
         }
       }
 
       function setupDataChannel(channel) {
+        console.log('Настройка DataChannel');
         channel.onopen = () => {
+          console.log('DataChannel открыт');
           if (isHost) {
             dc.send(JSON.stringify({ type: 'init', host: true }));
           }
@@ -545,15 +572,18 @@
               scoreAI = msg.score.ai;
               updateScoreDisplay();
             }
-          } catch(e) {}
+          } catch(e) {
+            console.error('Ошибка в данных канала:', e);
+          }
         };
         channel.onclose = () => {
+          console.log('DataChannel закрыт');
           dc = null;
           remotePaddleY = 0;
           if (remoteVideo.srcObject) remoteVideo.srcObject = null;
           setStatus('status_disconnected');
         };
-        channel.onerror = (err) => console.error('DC error:', err);
+        channel.onerror = (err) => console.error('Ошибка DataChannel:', err);
       }
 
       async function closeConnection() {
@@ -563,7 +593,9 @@
         remotePaddleY = 0;
         localSdpText.value = '';
         acceptAnswerBtn.disabled = true;
+        sendAnswerBtn.style.display = 'none';
         setIceStatus('');
+        setInstruction('');
       }
 
       // ----- Копирование SDP -----
@@ -571,7 +603,12 @@
         const text = localSdpText.value.trim();
         if (text) {
           navigator.clipboard.writeText(text).then(() => {
-            // Визуальная обратная связь
+            copyLocalSdpBtn.textContent = '✅ ' + t('sdp_copied');
+            setTimeout(() => { copyLocalSdpBtn.textContent = t('copy_sdp'); }, 2000);
+          }).catch(() => {
+            // Fallback: выделить и скопировать вручную
+            localSdpText.select();
+            document.execCommand('copy');
             copyLocalSdpBtn.textContent = '✅ ' + t('sdp_copied');
             setTimeout(() => { copyLocalSdpBtn.textContent = t('copy_sdp'); }, 2000);
           });
@@ -584,10 +621,11 @@
         closeConnection();
         setupPeerConnection();
         setStatus('status_gathering');
+        setInstruction('');
 
         const offer = await pc.createOffer();
         await pc.setLocalDescription(offer);
-
+        console.log('Ожидание сбора ICE...');
         await new Promise(resolve => {
           if (pc.iceGatheringState === 'complete') resolve();
           else pc.onicegatheringstatechange = () => {
@@ -597,7 +635,9 @@
 
         localSdpText.value = JSON.stringify(pc.localDescription);
         setStatus('status_offer_ready');
+        setInstruction('instruction_host');
         acceptAnswerBtn.disabled = false;
+        sendAnswerBtn.style.display = 'none';
       });
 
       acceptOfferBtn.addEventListener('click', async () => {
@@ -605,9 +645,9 @@
         closeConnection();
         setupPeerConnection();
         setStatus('status_connecting');
+        setInstruction('instruction_guest');
 
         let remoteStr = remoteSdpText.value.trim();
-        // Убираем возможные лишние пробелы/переносы строк вокруг JSON
         remoteStr = remoteStr.replace(/^[\s\uFEFF\xA0]+|[\s\uFEFF\xA0]+$/g, '');
 
         try {
@@ -615,6 +655,7 @@
           const remoteDesc = JSON.parse(remoteStr);
           if (!remoteDesc.type || !remoteDesc.sdp) throw new Error('Invalid SDP');
           await pc.setRemoteDescription(new RTCSessionDescription(remoteDesc));
+          console.log('Удалённое описание установлено, создаём ответ...');
 
           setStatus('status_gathering');
           const answer = await pc.createAnswer();
@@ -628,13 +669,34 @@
           });
 
           localSdpText.value = JSON.stringify(pc.localDescription);
-          setStatus('status_waiting_answer');
+          setStatus('status_waiting_answer'); // фактически ответ готов
+          setInstruction('answer_ready');
+          // Показываем кнопку "Отправить ответ хосту"
+          sendAnswerBtn.style.display = 'block';
+          acceptOfferBtn.disabled = true;
         } catch (e) {
-          console.error(e);
+          console.error('Ошибка принятия предложения:', e);
           alert(t('alert_bad_sdp'));
           setStatus('status_waiting');
           closeConnection();
         }
+      });
+
+      sendAnswerBtn.addEventListener('click', () => {
+        // Копирует SDP ответа в буфер обмена и просит отправить хосту
+        const text = localSdpText.value.trim();
+        if (text) {
+          navigator.clipboard.writeText(text).then(() => {
+            alert(t('sdp_copied') + ' ' + t('host_waiting'));
+          }).catch(() => {
+            localSdpText.select();
+            document.execCommand('copy');
+            alert(t('sdp_copied') + ' ' + t('host_waiting'));
+          });
+        }
+        // Оставляем статус для гостя
+        setStatus('status_waiting_answer');
+        setInstruction('answer_ready');
       });
 
       acceptAnswerBtn.addEventListener('click', async () => {
@@ -646,10 +708,12 @@
           const remoteDesc = JSON.parse(remoteStr);
           if (!remoteDesc.type || !remoteDesc.sdp) throw new Error('Invalid SDP');
           await pc.setRemoteDescription(new RTCSessionDescription(remoteDesc));
+          console.log('Ответ установлен, ждём ICE-соединения...');
           acceptAnswerBtn.disabled = true;
           setStatus('status_connecting');
+          setInstruction('');
         } catch (e) {
-          console.error(e);
+          console.error('Ошибка принятия ответа:', e);
           alert(t('alert_bad_sdp'));
           closeConnection();
         }
@@ -671,6 +735,7 @@
           copyLinkBtn.style.display = 'inline-block';
           guestJoinForm.style.display = 'none';
           signalingPanel.style.display = 'block';
+          setInstruction('instruction_host');
         } else {
           copyLinkBtn.style.display = 'none';
           if (roomFromUrl) {
@@ -679,6 +744,7 @@
             guestJoinForm.style.display = 'flex';
           }
           signalingPanel.style.display = 'block';
+          setInstruction('instruction_guest');
         }
       }
 
