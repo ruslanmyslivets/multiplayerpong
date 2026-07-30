@@ -4,6 +4,8 @@
 ### Рекомендуется играть на пк с вебкамерой! 💻
 ### Game recommended for PC with webcam! 💻
 ![Скриншот игры](https://github.com/user-attachments/assets/6a1d1f6a-8d3a-44ce-9c36-a93c4f97942d)
+
+## Как играть? / How to play?
 ### 🇷🇺 Русский
 1. Откройте игру: [https://ruslanmyslivets.github.io/multiplayerpong/](https://ruslanmyslivets.github.io/multiplayerpong/)
 2. Разрешите браузеру камеру и микрофон.
