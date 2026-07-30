@@ -55,11 +55,22 @@
       background: rgba(0,0,0,0.9); padding: 10px;
       border-radius: 8px; z-index: 25;
       display: flex; flex-direction: column; gap: 6px;
-      max-width: 300px;
+      max-width: 320px;
+      transition: opacity 0.3s;
     }
-    #signaling-panel textarea {
+    .sdp-block {
+      position: relative;
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+    }
+    .sdp-block textarea {
       width: 100%; height: 55px; font-size: 10px; background: #333; color: white; border: 1px solid #888; resize: none;
       font-family: monospace;
+    }
+    .copy-sdp-btn {
+      font-size: 10px; padding: 2px 6px; background: #555; color: white; border: 1px solid #aaa; border-radius: 3px; cursor: pointer;
+      align-self: flex-end;
     }
     #signaling-panel button {
       font-size: 11px; padding: 4px 8px; cursor: pointer; background: #444; color: white; border: 1px solid white; border-radius: 4px;
@@ -106,8 +117,14 @@
     </div>
     <div id="signaling-panel" style="display: none;">
       <span id="sig-title">Ручная сигнализация</span>
-      <textarea id="local-sdp" placeholder="Ваш SDP появится здесь" readonly></textarea>
-      <textarea id="remote-sdp" placeholder="Вставьте SDP собеседника"></textarea>
+      <div class="sdp-block">
+        <textarea id="local-sdp" placeholder="Ваш SDP появится здесь" readonly></textarea>
+        <button class="copy-sdp-btn" id="copy-local-sdp">📋 Копировать</button>
+      </div>
+      <div class="sdp-block">
+        <textarea id="remote-sdp" placeholder="Вставьте SDP собеседника"></textarea>
+        <button class="copy-sdp-btn" id="paste-remote-sdp" style="display:none;"></button>
+      </div>
       <button id="create-offer-btn">Создать предложение (хост)</button>
       <button id="accept-offer-btn">Принять предложение и ответить (гость)</button>
       <button id="accept-answer-btn" disabled>Принять ответ (хост)</button>
@@ -152,7 +169,9 @@
           ice_connected: 'Канал установлен',
           ice_disconnected: 'Канал разорван',
           link_copied: 'Ссылка скопирована!',
-          host_waiting: 'Хост: отправьте SDP гостю после нажатия "Создать предложение"',
+          host_waiting: 'Отправьте SDP гостю',
+          copy_sdp: '📋 Копировать',
+          sdp_copied: 'SDP скопирован!',
         },
         en: {
           room_prefix: 'Room ID:',
@@ -180,7 +199,9 @@
           ice_connected: 'Channel established',
           ice_disconnected: 'Channel disconnected',
           link_copied: 'Link copied!',
-          host_waiting: 'Host: send SDP to guest after clicking "Create Offer"',
+          host_waiting: 'Send SDP to guest',
+          copy_sdp: '📋 Copy',
+          sdp_copied: 'SDP copied!',
         }
       };
 
@@ -209,6 +230,7 @@
         document.querySelector('#copy-link-btn').textContent = t('copy_link');
         document.querySelector('#join-btn').textContent = t('join');
         document.querySelector('#room-input').placeholder = t('room_placeholder');
+        document.querySelector('#copy-local-sdp').textContent = t('copy_sdp');
         if (window._iceStatusKey) setIceStatus(window._iceStatusKey);
         if (window._statusKey) setStatus(window._statusKey);
       }
@@ -243,6 +265,7 @@
       const signalingPanel = document.getElementById('signaling-panel');
       const localSdpText = document.getElementById('local-sdp');
       const remoteSdpText = document.getElementById('remote-sdp');
+      const copyLocalSdpBtn = document.getElementById('copy-local-sdp');
       const createOfferBtn = document.getElementById('create-offer-btn');
       const acceptOfferBtn = document.getElementById('accept-offer-btn');
       const acceptAnswerBtn = document.getElementById('accept-answer-btn');
@@ -270,6 +293,7 @@
       const rtcConfig = {
         iceServers: [
           { urls: 'stun:stun.l.google.com:19302' },
+          // Раскомментируйте для обхода сложных NAT
           // { urls: 'turn:openrelay.metered.ca:80', username: 'openrelayproject', credential: 'openrelayproject' }
         ]
       };
@@ -542,6 +566,18 @@
         setIceStatus('');
       }
 
+      // ----- Копирование SDP -----
+      copyLocalSdpBtn.addEventListener('click', () => {
+        const text = localSdpText.value.trim();
+        if (text) {
+          navigator.clipboard.writeText(text).then(() => {
+            // Визуальная обратная связь
+            copyLocalSdpBtn.textContent = '✅ ' + t('sdp_copied');
+            setTimeout(() => { copyLocalSdpBtn.textContent = t('copy_sdp'); }, 2000);
+          });
+        }
+      });
+
       // ----- Сигнализация -----
       createOfferBtn.addEventListener('click', async () => {
         isHost = true;
@@ -570,8 +606,12 @@
         setupPeerConnection();
         setStatus('status_connecting');
 
+        let remoteStr = remoteSdpText.value.trim();
+        // Убираем возможные лишние пробелы/переносы строк вокруг JSON
+        remoteStr = remoteStr.replace(/^[\s\uFEFF\xA0]+|[\s\uFEFF\xA0]+$/g, '');
+
         try {
-          const remoteStr = remoteSdpText.value.trim();
+          if (!remoteStr) throw new Error('empty');
           const remoteDesc = JSON.parse(remoteStr);
           if (!remoteDesc.type || !remoteDesc.sdp) throw new Error('Invalid SDP');
           await pc.setRemoteDescription(new RTCSessionDescription(remoteDesc));
@@ -598,8 +638,11 @@
       });
 
       acceptAnswerBtn.addEventListener('click', async () => {
+        let remoteStr = remoteSdpText.value.trim();
+        remoteStr = remoteStr.replace(/^[\s\uFEFF\xA0]+|[\s\uFEFF\xA0]+$/g, '');
+
         try {
-          const remoteStr = remoteSdpText.value.trim();
+          if (!remoteStr) throw new Error('empty');
           const remoteDesc = JSON.parse(remoteStr);
           if (!remoteDesc.type || !remoteDesc.sdp) throw new Error('Invalid SDP');
           await pc.setRemoteDescription(new RTCSessionDescription(remoteDesc));
@@ -624,21 +667,18 @@
 
       function updateRoomDisplay(roomId) {
         roomIdDisplay.textContent = t('room_prefix') + ' ' + roomId;
-        // Если хост – показываем кнопку копирования
         if (isHost) {
           copyLinkBtn.style.display = 'inline-block';
           guestJoinForm.style.display = 'none';
-          signalingPanel.style.display = 'block'; // покажем сигнализацию для хоста
+          signalingPanel.style.display = 'block';
         } else {
           copyLinkBtn.style.display = 'none';
-          // Гость: если перешёл по ссылке, то скрываем форму ввода, иначе покажем
           if (roomFromUrl) {
             guestJoinForm.style.display = 'none';
-            signalingPanel.style.display = 'none'; // не нужна, если всё автоматически
           } else {
             guestJoinForm.style.display = 'flex';
-            signalingPanel.style.display = 'block'; // чтобы вставить SDP
           }
+          signalingPanel.style.display = 'block';
         }
       }
 
@@ -662,14 +702,12 @@
           url.searchParams.set('room', newRoom);
           window.history.replaceState({}, '', url.toString());
           updateRoomDisplay(newRoom);
-          // Здесь сигнализация нужна ручная – показываем панель
-          signalingPanel.style.display = 'block';
           guestJoinForm.style.display = 'none';
           setStatus('status_waiting');
         }
       });
 
-      // При загрузке определяем роль
+      // ---------- Старт ----------
       window.addEventListener('load', async () => {
         currentLang = detectLanguage();
         setLanguage(currentLang);
@@ -682,26 +720,16 @@
           gameLoop();
 
           if (roomFromUrl) {
-            // Гость по ссылке
             isHost = false;
             currentRoomId = roomFromUrl;
             updateRoomDisplay(roomFromUrl);
-            // Здесь не нужна сигнализация, но нужно автоматически создать offer?
-            // В случае полной автоматики нужен PeerJS, а у нас ручная.
-            // Для ручной сигнализации гостю нужно получить offer от хоста.
-            // Поэтому показываем сигнализацию, но скрываем guest-join-form.
-            signalingPanel.style.display = 'block';
             setStatus('status_waiting');
-            // Хост должен нажать "Создать предложение" и передать SDP.
-            // Упростим: если гость по ссылке, то сигнализация ручная.
           } else {
-            // Хост
             isHost = true;
             currentRoomId = generateRoomId();
             updateRoomDisplay(currentRoomId);
-            signalingPanel.style.display = 'block';
-            setStatus('status_waiting');
             window.history.replaceState({}, '', `${location.pathname}?room=${currentRoomId}`);
+            setStatus('status_waiting');
           }
         } catch (err) {
           console.error(err);
