@@ -226,7 +226,7 @@
       const opponent = { x: 0, y: 0 };
       const ball = { x: 0, y: 0, r: 8, vx: 0, vy: 0, speed: 5 };
       let scoreP = 0, scoreO = 0;
-      let handY = 0.5, hand = false, running = false;
+      let handY = 0.5, hand = false;
 
       let pc = null, dc = null, isHost = false, remoteY = 0, localStream, roomId = '';
       const rtcCfg = {
@@ -258,49 +258,63 @@
       function loop() {
         if (!cw || !ch) return requestAnimationFrame(loop);
 
+        // Управление игроком (рука), если рука видна – двигаем ракетку, иначе она стоит
         if (hand) {
           let cy = handY * ch;
           cy = Math.max(PH/2, Math.min(ch - PH/2, cy));
           player.y = cy - PH/2;
-          running = true;
-        } else running = false;
+        }
 
+        // ИИ управляет правой ракеткой, если нет удалённого игрока
         if (!dc || dc.readyState !== 'open') {
-          if (running) {
-            const aiCy = opponent.y + PH/2;
-            if (ball.y < aiCy - 5) opponent.y -= 4.5;
-            else if (ball.y > aiCy + 5) opponent.y += 4.5;
-          }
-        } else opponent.y = remoteY;
+          const aiCy = opponent.y + PH/2;
+          if (ball.y < aiCy - 5) opponent.y -= 4.5;
+          else if (ball.y > aiCy + 5) opponent.y += 4.5;
+        } else {
+          opponent.y = remoteY;
+        }
         opponent.y = Math.max(0, Math.min(ch - PH, opponent.y));
 
+        // Отправка своей позиции при мультиплеере
         if (dc && dc.readyState === 'open' && hand) {
           try { dc.send(JSON.stringify({ type: 'paddle', y: player.y })); } catch(e) {}
         }
 
+        // Физика мяча (локально или хост)
         if (!dc || dc.readyState !== 'open' || isHost) {
-          if (running) {
-            ball.x += ball.vx; ball.y += ball.vy;
-            if (ball.y - ball.r <= 0 || ball.y + ball.r >= ch) { ball.vy *= -1; ball.y = Math.max(ball.r, Math.min(ch - ball.r, ball.y)); }
-            if (ball.vx < 0 && ball.x - ball.r <= player.x + PW && ball.x - ball.r >= player.x && ball.y >= player.y && ball.y <= player.y + PH) {
-              const hit = (ball.y - player.y) / PH;
-              const ang = (hit - 0.5) * (Math.PI/3);
-              ball.vx = ball.speed * Math.cos(ang);
-              ball.vy = ball.speed * Math.sin(ang);
-              if (ball.vx < 0) ball.vx *= -1;
-              ball.speed = Math.min(ball.speed + 0.2, 12);
-            }
-            if (ball.vx > 0 && ball.x + ball.r >= opponent.x && ball.x + ball.r <= opponent.x + PW && ball.y >= opponent.y && ball.y <= opponent.y + PH) {
-              const hit = (ball.y - opponent.y) / PH;
-              const ang = (hit - 0.5) * (Math.PI/3);
-              ball.vx = -ball.speed * Math.cos(ang);
-              ball.vy = ball.speed * Math.sin(ang);
-              if (ball.vx > 0) ball.vx *= -1;
-              ball.speed = Math.min(ball.speed + 0.2, 12);
-            }
-            if (ball.x + ball.r < 0) { scoreO++; updateScore(); resetBall(); }
-            else if (ball.x - ball.r > cw) { scoreP++; updateScore(); resetBall(); }
+          ball.x += ball.vx;
+          ball.y += ball.vy;
+
+          if (ball.y - ball.r <= 0 || ball.y + ball.r >= ch) {
+            ball.vy *= -1;
+            ball.y = Math.max(ball.r, Math.min(ch - ball.r, ball.y));
           }
+
+          if (ball.vx < 0 && ball.x - ball.r <= player.x + PW &&
+              ball.x - ball.r >= player.x &&
+              ball.y >= player.y && ball.y <= player.y + PH) {
+            const hit = (ball.y - player.y) / PH;
+            const ang = (hit - 0.5) * (Math.PI/3);
+            ball.vx = ball.speed * Math.cos(ang);
+            ball.vy = ball.speed * Math.sin(ang);
+            if (ball.vx < 0) ball.vx *= -1;
+            ball.speed = Math.min(ball.speed + 0.2, 12);
+          }
+          if (ball.vx > 0 && ball.x + ball.r >= opponent.x &&
+              ball.x + ball.r <= opponent.x + PW &&
+              ball.y >= opponent.y && ball.y <= opponent.y + PH) {
+            const hit = (ball.y - opponent.y) / PH;
+            const ang = (hit - 0.5) * (Math.PI/3);
+            ball.vx = -ball.speed * Math.cos(ang);
+            ball.vy = ball.speed * Math.sin(ang);
+            if (ball.vx > 0) ball.vx *= -1;
+            ball.speed = Math.min(ball.speed + 0.2, 12);
+          }
+
+          if (ball.x + ball.r < 0) { scoreO++; updateScore(); resetBall(); }
+          else if (ball.x - ball.r > cw) { scoreP++; updateScore(); resetBall(); }
+
+          // Отправка состояния гостю
           if (dc && dc.readyState === 'open' && isHost) {
             try {
               dc.send(JSON.stringify({
@@ -310,8 +324,12 @@
               }));
             } catch(e) {}
           }
+        } else {
+          // Гость: обновляем мяч по данным хоста (уже получены в onmessage)
+          // ничего не делаем, мяч уже установлен
         }
 
+        // Отрисовка
         ctx.clearRect(0, 0, cw, ch);
         ctx.fillStyle = 'white';
         ctx.fillRect(player.x, player.y, PW, PH);
@@ -320,6 +338,7 @@
         ctx.arc(ball.x, ball.y, ball.r, 0, Math.PI*2);
         ctx.fill();
         ctx.closePath();
+
         requestAnimationFrame(loop);
       }
 
@@ -328,7 +347,9 @@
           const lm = r.multiHandLandmarks[0];
           handY = (lm[4].y + lm[8].y) / 2;
           hand = true;
-        } else hand = false;
+        } else {
+          hand = false;
+        }
       }
 
       async function initCam() {
@@ -361,7 +382,6 @@
           if (e.streams?.[0]) {
             remoteVideo.srcObject = e.streams[0];
             setStatus('status_connected');
-            // Панель не скрываем
             disconnectBtn.style.display = 'block';
           }
         };
@@ -371,7 +391,6 @@
           else if (s === 'connected' || s === 'completed') {
             setIce('ice_connected');
             setStatus('status_connected');
-            // Панель не трогаем, просто показываем кнопку
             disconnectBtn.style.display = 'block';
           } else if (s === 'disconnected' || s === 'failed') {
             setIce('ice_disconnected');
@@ -392,7 +411,6 @@
 
       function setupDC(ch) {
         ch.onopen = () => {
-          // панель не скрываем
           if (isHost) {
             ch.send(JSON.stringify({
               type: 'state',
@@ -556,7 +574,7 @@
           await initCam();
           resize(); updateScore();
           window.addEventListener('resize', resize);
-          loop();
+          loop(); // игра запускается сразу, мяч движется всегда
           if (urlRoom) { isHost = false; roomId = urlRoom; showRoom(urlRoom); setStatus('status_waiting'); }
           else { isHost = true; roomId = genRoom(); history.replaceState({}, '', `${location.pathname}?room=${roomId}`); showRoom(roomId); setStatus('status_waiting'); }
         } catch (e) { alert(t('alert_camera')); }
