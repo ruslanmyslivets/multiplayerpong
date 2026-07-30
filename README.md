@@ -1,5 +1,5 @@
 # MultiCamPong (MCP)
-### US: This is game reimagined of classic ping-pong and used camera for control the line, microphone for voicechat with friends!
+### EN: This is game reimagined of classic ping-pong and used camera for control the line, microphone for voicechat with friends!
 ### RU: Это переосмысленная версия классического пинг-понга, в которой для управления линией используется камера, а для голосового общения с друзьями — микрофон!
 ![Скриншот игры](https://github.com/user-attachments/assets/6a1d1f6a-8d3a-44ce-9c36-a93c4f97942d)
 ### 🇷🇺 Русский
