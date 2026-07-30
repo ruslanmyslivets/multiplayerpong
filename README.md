@@ -25,7 +25,7 @@
 ---
 
 ## 🛠 Технологии / Technologies
-- MediaPipe Hands – распознавание пальцев
-- PeerJS – сигнализация и передача данных
-- WebRTC – видео и голосовая связь
-- HTML5 Canvas – рендеринг игры
+- MediaPipe Hands
+- PeerJS
+- WebRTC
+- HTML5 Canvas
